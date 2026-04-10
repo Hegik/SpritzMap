@@ -6,10 +6,12 @@
     open = $bindable(false),
     locationId = null,
     locationName = '',
+    onsubmitted = () => {},
   }: {
     open: boolean;
     locationId: number | null;
     locationName: string;
+    onsubmitted?: () => void;
   } = $props();
 
   let drinkId = $state(0);
@@ -36,6 +38,7 @@
         note: note || null,
       });
       success = true;
+      onsubmitted();
       setTimeout(() => { open = false; success = false; }, 1500);
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : 'Fehler beim Speichern';

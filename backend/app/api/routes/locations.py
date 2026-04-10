@@ -105,3 +105,40 @@ async def get_locations_geojson(
         })
 
     return {"type": "FeatureCollection", "features": features}
+
+
+@router.get("/geojson/empty")
+async def get_empty_locations_geojson(db: AsyncSession = Depends(get_db)):
+    """Returns active locations that have no current price entries."""
+    query = (
+        select(
+            Location,
+            ST_X(Location.geom).label("lng"),
+            ST_Y(Location.geom).label("lat"),
+        )
+        .outerjoin(
+            PriceEntry,
+            (PriceEntry.location_id == Location.id) & (PriceEntry.is_current == True),
+        )
+        .where(Location.is_active == True)
+        .where(PriceEntry.id == None)
+    )
+
+    results = await db.execute(query)
+    rows = results.all()
+
+    features = []
+    for row in rows:
+        location, lng, lat = row
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lng, lat]},
+            "properties": {
+                "id": location.id,
+                "name": location.name,
+                "location_type": location.location_type.value,
+                "address": f"{location.address_street or ''}, {location.address_postcode or ''} {location.address_city or ''}".strip(", "),
+            },
+        })
+
+    return {"type": "FeatureCollection", "features": features}

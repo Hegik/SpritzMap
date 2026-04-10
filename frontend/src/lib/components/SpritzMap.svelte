@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { selectedDrinkId, selectedPriceTier } from '$lib/stores/map';
-  import { createGlassIcon } from '$lib/utils/markerIcon';
+  import { createGlassIcon, createEmptyGlassIcon } from '$lib/utils/markerIcon';
+  import PriceSubmitModal from '$lib/components/PriceSubmitModal.svelte';
+  import { isLoggedIn } from '$lib/stores/auth';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let leaflet: any;
 
@@ -12,9 +14,45 @@
   let markerLayer: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let wmsLayer: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let emptyLayer: any;
+
+  let submitOpen = $state(false);
+  let submitLocationId = $state<number | null>(null);
+  let submitLocationName = $state('');
 
   const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+
+  async function loadEmptyMarkers() {
+    if (!map) return;
+    emptyLayer.clearLayers();
+
+    const res = await fetch(`${API_URL}/locations/geojson/empty`);
+    if (!res.ok) return;
+    const geojson: GeoJSON.FeatureCollection = await res.json();
+
+    for (const feature of geojson.features) {
+      const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
+      const [lng, lat] = geometry.coordinates;
+      const icon = createEmptyGlassIcon(leaflet);
+
+      const marker = leaflet.marker([lat, lng], { icon });
+      marker.bindPopup(`
+        <strong>${properties!.name}</strong><br>
+        <small>${properties!.address}</small><br>
+        <em style="color:#aaa;font-size:0.8rem">Noch kein Preis gemeldet</em>
+      `);
+      marker.on('click', () => {
+        if ($isLoggedIn) {
+          submitLocationId = properties!.id;
+          submitLocationName = properties!.name;
+          submitOpen = true;
+        }
+      });
+      emptyLayer.addLayer(marker);
+    }
+  }
 
   async function loadMarkers(drinkId: number | null, priceTier: string | null) {
     if (!map) return;
@@ -63,6 +101,8 @@
     }).addTo(map);
 
     markerLayer = leaflet.layerGroup().addTo(map);
+    emptyLayer = leaflet.layerGroup().addTo(map);
+    await loadEmptyMarkers();
 
     wmsLayer = leaflet.tileLayer.wms(`${GEOSERVER_URL}/wms`, {
       layers: 'spritzmap:lor_price_summary',
@@ -97,6 +137,13 @@
 </script>
 
 <div bind:this={mapEl} class="map-container"></div>
+
+<PriceSubmitModal
+  bind:open={submitOpen}
+  locationId={submitLocationId}
+  locationName={submitLocationName}
+  onsubmitted={() => { loadEmptyMarkers(); loadMarkers($selectedDrinkId, $selectedPriceTier); }}
+/>
 
 <style>
   .map-container {
