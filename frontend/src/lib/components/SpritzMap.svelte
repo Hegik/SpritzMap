@@ -100,9 +100,8 @@
       maxZoom: 19,
     }).addTo(map);
 
-    markerLayer = leaflet.layerGroup().addTo(map);
-    emptyLayer = leaflet.layerGroup().addTo(map);
-    await loadEmptyMarkers();
+    markerLayer = leaflet.layerGroup();
+    emptyLayer = leaflet.layerGroup();
 
     wmsLayer = leaflet.tileLayer.wms(`${GEOSERVER_URL}/wms`, {
       layers: 'spritzmap:lor_price_summary',
@@ -112,14 +111,23 @@
       attribution: 'SpritzMap LOR Layer',
     });
 
-    map.on('zoomend', () => {
-      if (map.getZoom() < 13) {
+    function applyZoomLayers() {
+      const zoom = map.getZoom();
+      if (zoom < 13) {
         if (!map.hasLayer(wmsLayer)) wmsLayer.addTo(map);
+        if (map.hasLayer(markerLayer)) map.removeLayer(markerLayer);
+        if (map.hasLayer(emptyLayer)) map.removeLayer(emptyLayer);
       } else {
         if (map.hasLayer(wmsLayer)) map.removeLayer(wmsLayer);
+        if (!map.hasLayer(markerLayer)) markerLayer.addTo(map);
+        if (!map.hasLayer(emptyLayer)) emptyLayer.addTo(map);
       }
-    });
+    }
 
+    map.on('zoomend', applyZoomLayers);
+    applyZoomLayers();
+
+    await loadEmptyMarkers();
     await loadMarkers(null, null);
 
     const unsubDrink = selectedDrinkId.subscribe(() => loadMarkers($selectedDrinkId, $selectedPriceTier));
