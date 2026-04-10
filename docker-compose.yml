@@ -1,0 +1,55 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: spritzmap
+      POSTGRES_USER: spritzmap
+      POSTGRES_PASSWORD: spritzmap
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spritzmap"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file: ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    env_file: ./frontend/.env
+    depends_on:
+      - backend
+
+  geoserver:
+    image: kartoza/geoserver:2.25.0
+    ports:
+      - "8080:8080"
+    environment:
+      GEOSERVER_ADMIN_USER: admin
+      GEOSERVER_ADMIN_PASSWORD: geoserver
+      GEOWEBCACHE_CACHE_DIR: /opt/geoserver/data_dir/gwc
+    volumes:
+      - geoserver_data:/opt/geoserver/data_dir
+      - ./geoserver/data:/opt/geoserver/data_dir/spritzmap
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  geoserver_data:

@@ -1,0 +1,107 @@
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from geoalchemy2.functions import ST_AsGeoJSON, ST_X, ST_Y
+import json
+from app.core.database import get_db
+from app.models.location import Location
+from app.models.price_entry import PriceEntry
+from app.models.drink import Drink
+from app.core.config import settings
+
+router = APIRouter(prefix="/locations", tags=["locations"])
+
+
+@router.get("/geojson")
+async def get_locations_geojson(
+    drink_id: int | None = Query(None),
+    price_tier: str | None = Query(None, pattern="^(€|€€|€€€)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Returns GeoJSON FeatureCollection of all active locations with
+    aggregated price data. Filtered by drink and/or price tier.
+    """
+    # Subquery: latest price per location+drink
+    latest_price_sq = (
+        select(
+            PriceEntry.location_id,
+            PriceEntry.drink_id,
+            func.max(PriceEntry.reported_at).label("max_reported_at"),
+        )
+        .where(PriceEntry.is_current == True)
+        .group_by(PriceEntry.location_id, PriceEntry.drink_id)
+        .subquery()
+    )
+
+    # Subquery: avg color_value from last 50 entries per location+drink
+    color_sq = (
+        select(
+            PriceEntry.location_id,
+            PriceEntry.drink_id,
+            func.avg(PriceEntry.color_value).label("avg_color"),
+        )
+        .where(PriceEntry.is_current == True)
+        .group_by(PriceEntry.location_id, PriceEntry.drink_id)
+        .subquery()
+    )
+
+    query = (
+        select(
+            Location,
+            PriceEntry.price,
+            PriceEntry.drink_id,
+            Drink.name.label("drink_name"),
+            Drink.color_hex,
+            color_sq.c.avg_color,
+            ST_X(Location.geom).label("lng"),
+            ST_Y(Location.geom).label("lat"),
+        )
+        .join(latest_price_sq, Location.id == latest_price_sq.c.location_id)
+        .join(
+            PriceEntry,
+            (PriceEntry.location_id == latest_price_sq.c.location_id)
+            & (PriceEntry.drink_id == latest_price_sq.c.drink_id)
+            & (PriceEntry.reported_at == latest_price_sq.c.max_reported_at),
+        )
+        .join(Drink, PriceEntry.drink_id == Drink.id)
+        .join(
+            color_sq,
+            (color_sq.c.location_id == Location.id)
+            & (color_sq.c.drink_id == PriceEntry.drink_id),
+        )
+        .where(Location.is_active == True)
+    )
+
+    if drink_id:
+        query = query.where(PriceEntry.drink_id == drink_id)
+
+    results = await db.execute(query)
+    rows = results.all()
+
+    features = []
+    for row in rows:
+        location, price, drink_id_val, drink_name, color_hex, avg_color, lng, lat = row
+        tier = settings.get_price_tier(price)
+
+        if price_tier and tier != price_tier:
+            continue
+
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lng, lat]},
+            "properties": {
+                "id": location.id,
+                "name": location.name,
+                "location_type": location.location_type.value,
+                "address": f"{location.address_street or ''}, {location.address_postcode or ''} {location.address_city or ''}".strip(", "),
+                "drink_id": drink_id_val,
+                "drink_name": drink_name,
+                "drink_color_hex": color_hex,
+                "price": price,
+                "price_tier": tier,
+                "avg_color_value": round(avg_color or 128),
+            },
+        })
+
+    return {"type": "FeatureCollection", "features": features}

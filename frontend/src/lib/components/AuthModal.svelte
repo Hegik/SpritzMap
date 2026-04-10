@@ -1,0 +1,153 @@
+<script lang="ts">
+  import { authStore } from '$lib/stores/auth';
+  import { api } from '$lib/api/client';
+
+  let { open = $bindable(false) } = $props();
+
+  let mode = $state<'login' | 'register'>('login');
+  let email = $state('');
+  let username = $state('');
+  let password = $state('');
+  let error = $state('');
+  let loading = $state(false);
+
+  async function submit() {
+    error = '';
+    loading = true;
+    try {
+      if (mode === 'login') {
+        const { access_token } = await api.login(email, password);
+        authStore.setToken(access_token);
+        const me = await api.get<{ id: number; email: string; username: string; role: 'user' | 'moderator' | 'admin' }>('/auth/me');
+        authStore.setUser(me);
+        open = false;
+      } else {
+        await api.post('/auth/register', { email, username, password });
+        mode = 'login';
+        error = 'Registrierung erfolgreich — bitte einloggen.';
+      }
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      loading = false;
+    }
+  }
+</script>
+
+{#if open}
+  <div
+    class="overlay"
+    onclick={() => (open = false)}
+    onkeydown={(e) => e.key === 'Escape' && (open = false)}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+  >
+    <div
+      class="modal"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="document"
+    >
+      <h2>{mode === 'login' ? 'Einloggen' : 'Registrieren'}</h2>
+
+      <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
+        <label>
+          E-Mail
+          <input type="email" bind:value={email} required autocomplete="email" />
+        </label>
+
+        {#if mode === 'register'}
+          <label>
+            Nutzername
+            <input type="text" bind:value={username} required minlength={3} maxlength={50} />
+          </label>
+        {/if}
+
+        <label>
+          Passwort
+          <input
+            type="password"
+            bind:value={password}
+            required
+            minlength={8}
+            autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
+          />
+        </label>
+
+        {#if error}
+          <p class="error">{error}</p>
+        {/if}
+
+        <button type="submit" disabled={loading}>
+          {loading ? 'Lädt…' : mode === 'login' ? 'Einloggen' : 'Registrieren'}
+        </button>
+      </form>
+
+      <button class="switch" onclick={() => { mode = mode === 'login' ? 'register' : 'login'; error = ''; }}>
+        {mode === 'login' ? 'Noch kein Konto? Registrieren' : 'Schon ein Konto? Einloggen'}
+      </button>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    width: min(400px, 92vw);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  }
+
+  h2 { margin: 0 0 1.5rem; font-size: 1.25rem; }
+
+  form { display: flex; flex-direction: column; gap: 1rem; }
+
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 0.875rem; font-weight: 500; }
+
+  input {
+    padding: 8px 12px;
+    border: 1.5px solid #ddd;
+    border-radius: 6px;
+    font-size: 1rem;
+  }
+
+  input:focus { outline: none; border-color: #555; }
+
+  button[type='submit'] {
+    padding: 10px;
+    background: #e8500a;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  button[type='submit']:disabled { opacity: 0.6; }
+
+  .switch {
+    margin-top: 1rem;
+    background: none;
+    border: none;
+    color: #666;
+    font-size: 0.875rem;
+    cursor: pointer;
+    text-decoration: underline;
+    width: 100%;
+  }
+
+  .error { color: #c00; font-size: 0.875rem; margin: 0; }
+</style>
