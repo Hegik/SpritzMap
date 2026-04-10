@@ -10,7 +10,7 @@ interface User {
 const token = writable<string | null>(
   typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null
 );
-const user = writable<User | null>(null);
+export const user = writable<User | null>(null);
 
 token.subscribe((val) => {
   if (typeof localStorage !== 'undefined') {

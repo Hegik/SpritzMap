@@ -3,7 +3,7 @@
   import SpritzMap from '$lib/components/SpritzMap.svelte';
   import FilterPanel from '$lib/components/FilterPanel.svelte';
   import AuthModal from '$lib/components/AuthModal.svelte';
-  import { authStore, isLoggedIn } from '$lib/stores/auth';
+  import { authStore, isLoggedIn, user } from '$lib/stores/auth';
   import { drinks } from '$lib/stores/map';
   import { api } from '$lib/api/client';
 
@@ -36,7 +36,7 @@
     </div>
     <nav>
       {#if $isLoggedIn}
-        <span class="username">{$authStore.user?.username}</span>
+        <span class="username">{$user?.username}</span>
         <button onclick={() => authStore.logout()}>Abmelden</button>
       {:else}
         <button class="cta" onclick={() => (authOpen = true)}>Anmelden</button>
