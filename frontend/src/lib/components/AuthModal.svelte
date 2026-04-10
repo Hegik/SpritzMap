@@ -4,7 +4,7 @@
 
   let { open = $bindable(false) } = $props();
 
-  let mode = $state<'login' | 'register'>('login');
+  let mode = $state<'login' | 'register' | 'forgot'>('login');
   let email = $state('');
   let username = $state('');
   let password = $state('');
@@ -21,10 +21,13 @@
         const me = await api.get<{ id: number; email: string; username: string; role: 'user' | 'moderator' | 'admin' }>('/auth/me');
         authStore.setUser(me);
         open = false;
-      } else {
+      } else if (mode === 'register') {
         await api.post('/auth/register', { email, username, password });
         mode = 'login';
-        error = 'Registrierung erfolgreich — bitte einloggen.';
+        error = 'Registrierung erfolgreich — bitte bestätige deine E-Mail.';
+      } else {
+        await api.post('/auth/forgot-password', { email });
+        error = 'Falls die E-Mail existiert, wurde ein Link gesendet.';
       }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : 'Fehler';
@@ -49,7 +52,7 @@
       onkeydown={(e) => e.stopPropagation()}
       role="document"
     >
-      <h2>{mode === 'login' ? 'Einloggen' : 'Registrieren'}</h2>
+      <h2>{mode === 'login' ? 'Einloggen' : mode === 'register' ? 'Registrieren' : 'Passwort vergessen'}</h2>
 
       <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
         <label>
@@ -64,29 +67,36 @@
           </label>
         {/if}
 
-        <label>
-          Passwort
-          <input
-            type="password"
-            bind:value={password}
-            required
-            minlength={8}
-            autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
-          />
-        </label>
+        {#if mode !== 'forgot'}
+          <label>
+            Passwort
+            <input
+              type="password"
+              bind:value={password}
+              required
+              minlength={8}
+              autocomplete={mode === 'login' ? 'current-password' : 'new-password'}
+            />
+          </label>
+        {/if}
 
         {#if error}
           <p class="error">{error}</p>
         {/if}
 
         <button type="submit" disabled={loading}>
-          {loading ? 'Lädt…' : mode === 'login' ? 'Einloggen' : 'Registrieren'}
+          {loading ? 'Lädt…' : mode === 'login' ? 'Einloggen' : mode === 'register' ? 'Registrieren' : 'Link senden'}
         </button>
       </form>
 
       <button class="switch" onclick={() => { mode = mode === 'login' ? 'register' : 'login'; error = ''; }}>
-        {mode === 'login' ? 'Noch kein Konto? Registrieren' : 'Schon ein Konto? Einloggen'}
+        {mode === 'login' ? 'Noch kein Konto? Registrieren' : mode === 'register' ? 'Schon ein Konto? Einloggen' : 'Zurück zum Login'}
       </button>
+      {#if mode === 'login'}
+        <button class="switch" onclick={() => { mode = 'forgot'; error = ''; }}>
+          Passwort vergessen?
+        </button>
+      {/if}
     </div>
   </div>
 {/if}

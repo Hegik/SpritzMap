@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # Color averaging
     COLOR_AVERAGE_SAMPLE_SIZE: int = 50
 
+    # SMTP
+    SMTP_HOST: str = "smtp.protonmail.ch"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+
     # CORS
     FRONTEND_URL: str = "http://localhost:5173"
 
