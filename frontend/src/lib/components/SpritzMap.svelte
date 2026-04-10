@@ -38,17 +38,22 @@
       const icon = createEmptyGlassIcon(leaflet);
 
       const marker = leaflet.marker([lat, lng], { icon });
+      const locId = properties!.id;
+      const locName = properties!.name;
       marker.bindPopup(`
-        <strong>${properties!.name}</strong><br>
+        <strong>${locName}</strong><br>
         <small>${properties!.address}</small><br>
         <em style="color:#aaa;font-size:0.8rem">Noch kein Preis gemeldet</em>
+        ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden</button>' : ''}
       `);
-      marker.on('click', () => {
-        if ($isLoggedIn) {
-          submitLocationId = properties!.id;
-          submitLocationName = properties!.name;
+      marker.on('popupopen', (e: any) => {
+        const btn = e.popup.getElement()?.querySelector('.popup-btn');
+        btn?.addEventListener('click', () => {
+          submitLocationId = locId;
+          submitLocationName = locName;
           submitOpen = true;
-        }
+          map.closePopup();
+        });
       });
       emptyLayer.addLayer(marker);
     }
@@ -77,11 +82,23 @@
       );
 
       const marker = leaflet.marker([lat, lng], { icon });
+      const locId = properties!.id;
+      const locName = properties!.name;
       marker.bindPopup(`
-        <strong>${properties!.name}</strong><br>
+        <strong>${locName}</strong><br>
         ${properties!.drink_name} — <b>${properties!.price.toFixed(2)} €</b><br>
         <small>${properties!.address}</small>
+        ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden / aktualisieren</button>' : ''}
       `);
+      marker.on('popupopen', (e: any) => {
+        const btn = e.popup.getElement()?.querySelector('.popup-btn');
+        btn?.addEventListener('click', () => {
+          submitLocationId = locId;
+          submitLocationName = locName;
+          submitOpen = true;
+          map.closePopup();
+        });
+      });
       markerLayer.addLayer(marker);
     }
   }
@@ -113,7 +130,7 @@
 
     function applyZoomLayers() {
       const zoom = map.getZoom();
-      if (zoom < 13) {
+      if (zoom < 15) {
         if (!map.hasLayer(wmsLayer)) wmsLayer.addTo(map);
         if (map.hasLayer(markerLayer)) map.removeLayer(markerLayer);
         if (map.hasLayer(emptyLayer)) map.removeLayer(emptyLayer);
@@ -166,6 +183,19 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+  }
+
+  :global(.popup-btn) {
+    margin-top: 6px;
+    padding: 4px 10px;
+    background: #e8500a;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
   }
 
   :global(.spritz-label) {
