@@ -130,7 +130,7 @@
 
     function applyZoomLayers() {
       const zoom = map.getZoom();
-      if (zoom < 20) {
+      if (zoom < 18) {
         if (!map.hasLayer(wmsLayer)) wmsLayer.addTo(map);
         if (map.hasLayer(markerLayer)) map.removeLayer(markerLayer);
         if (map.hasLayer(emptyLayer)) map.removeLayer(emptyLayer);
