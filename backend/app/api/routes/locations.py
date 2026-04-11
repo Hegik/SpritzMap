@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from geoalchemy2.functions import ST_AsGeoJSON, ST_X, ST_Y
@@ -7,7 +7,9 @@ from app.core.database import get_db
 from app.models.location import Location
 from app.models.price_entry import PriceEntry
 from app.models.drink import Drink
+from app.models.user import User
 from app.core.config import settings
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/locations", tags=["locations"])
 
@@ -30,6 +32,7 @@ async def get_locations_geojson(
             func.max(PriceEntry.reported_at).label("max_reported_at"),
         )
         .where(PriceEntry.is_current == True)
+        .where(PriceEntry.unavailable == False)
         .group_by(PriceEntry.location_id, PriceEntry.drink_id)
         .subquery()
     )
@@ -42,6 +45,7 @@ async def get_locations_geojson(
             func.avg(PriceEntry.color_value).label("avg_color"),
         )
         .where(PriceEntry.is_current == True)
+        .where(PriceEntry.unavailable == False)
         .group_by(PriceEntry.location_id, PriceEntry.drink_id)
         .subquery()
     )
@@ -71,6 +75,7 @@ async def get_locations_geojson(
             & (color_sq.c.drink_id == PriceEntry.drink_id),
         )
         .where(Location.is_active == True)
+        .where(Location.no_spritz == False)
     )
 
     if drink_id:
@@ -107,6 +112,22 @@ async def get_locations_geojson(
     return {"type": "FeatureCollection", "features": features}
 
 
+@router.post("/{location_id}/no-spritz")
+async def mark_no_spritz(
+    location_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark a location as having no spritz at all — hides it from the map permanently."""
+    result = await db.execute(select(Location).where(Location.id == location_id))
+    location = result.scalar_one_or_none()
+    if not location:
+        raise HTTPException(status_code=404, detail="Location not found")
+    location.no_spritz = True
+    await db.commit()
+    return {"detail": "Location marked as no-spritz"}
+
+
 @router.get("/geojson/empty")
 async def get_empty_locations_geojson(db: AsyncSession = Depends(get_db)):
     """Returns active locations that have no current price entries."""
@@ -121,6 +142,7 @@ async def get_empty_locations_geojson(db: AsyncSession = Depends(get_db)):
             (PriceEntry.location_id == Location.id) & (PriceEntry.is_current == True),
         )
         .where(Location.is_active == True)
+        .where(Location.no_spritz == False)
         .where(PriceEntry.id == None)
     )
 

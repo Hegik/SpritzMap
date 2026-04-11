@@ -10,6 +10,11 @@ class PriceEntryCreate(BaseModel):
     note: str | None = Field(None, max_length=500)
 
 
+class PriceEntryUnavailable(BaseModel):
+    location_id: int
+    drink_id: int
+
+
 class PriceEntryUpdate(BaseModel):
     price: float = Field(gt=0, le=50)
     color_value: int = Field(ge=0, le=255)

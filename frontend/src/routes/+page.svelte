@@ -4,7 +4,7 @@
   import FilterPanel from '$lib/components/FilterPanel.svelte';
   import AuthModal from '$lib/components/AuthModal.svelte';
   import { authStore, isLoggedIn, user } from '$lib/stores/auth';
-  import { drinks } from '$lib/stores/map';
+  import { drinks, selectedDrinkId } from '$lib/stores/map';
   import { api } from '$lib/api/client';
 
   let authOpen = $state(false);
@@ -12,6 +12,8 @@
   onMount(async () => {
     const list = await api.get<typeof $drinks>('/drinks/');
     drinks.set(list);
+    const aperol = list.find((d: { name: string }) => d.name.toLowerCase().includes('aperol'));
+    if (aperol) selectedDrinkId.set(aperol.id);
 
     if ($isLoggedIn) {
       try {

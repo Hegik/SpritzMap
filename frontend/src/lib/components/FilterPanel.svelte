@@ -3,7 +3,7 @@
 
   const priceTiers = ['€', '€€', '€€€'];
 
-  function selectDrink(id: number | null) {
+  function selectDrink(id: number) {
     selectedDrinkId.set(id);
   }
 
@@ -17,12 +17,6 @@
 
   <section>
     <h3>Getränk</h3>
-    <button
-      class:active={$selectedDrinkId === null}
-      onclick={() => selectDrink(null)}
-    >
-      Alle
-    </button>
     {#each $drinks as drink}
       <button
         class:active={$selectedDrinkId === drink.id}

@@ -7,7 +7,7 @@ from app.core.config import settings
 from app.models.price_entry import PriceEntry
 from app.models.moderation_log import ModerationLog
 from app.models.user import User
-from app.schemas.price_entry import PriceEntryCreate, PriceEntryUpdate, PriceEntryOut
+from app.schemas.price_entry import PriceEntryCreate, PriceEntryUpdate, PriceEntryOut, PriceEntryUnavailable
 from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/prices", tags=["prices"])
@@ -29,6 +29,27 @@ def _to_out(entry: PriceEntry) -> PriceEntryOut:
             "note": entry.note,
         }
     )
+
+
+@router.post("/unavailable", status_code=status.HTTP_201_CREATED)
+async def mark_drink_unavailable(
+    data: PriceEntryUnavailable,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark a specific drink as unavailable at a location."""
+    entry = PriceEntry(
+        location_id=data.location_id,
+        drink_id=data.drink_id,
+        user_id=current_user.id,
+        price=0.0,
+        color_value=0,
+        unavailable=True,
+        is_current=True,
+    )
+    db.add(entry)
+    await db.commit()
+    return {"detail": "Drink marked as unavailable"}
 
 
 @router.post("/", response_model=PriceEntryOut, status_code=status.HTTP_201_CREATED)

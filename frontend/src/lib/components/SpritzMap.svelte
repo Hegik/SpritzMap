@@ -20,6 +20,7 @@
   let submitOpen = $state(false);
   let submitLocationId = $state<number | null>(null);
   let submitLocationName = $state('');
+  let submitIsEmpty = $state(false);
 
   const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -51,6 +52,7 @@
         btn?.addEventListener('click', () => {
           submitLocationId = locId;
           submitLocationName = locName;
+          submitIsEmpty = true;
           submitOpen = true;
           map.closePopup();
         });
@@ -95,6 +97,7 @@
         btn?.addEventListener('click', () => {
           submitLocationId = locId;
           submitLocationName = locName;
+          submitIsEmpty = false;
           submitOpen = true;
           map.closePopup();
         });
@@ -147,8 +150,8 @@
     await loadEmptyMarkers();
     await loadMarkers(null, null);
 
-    const unsubDrink = selectedDrinkId.subscribe(() => loadMarkers($selectedDrinkId, $selectedPriceTier));
-    const unsubTier = selectedPriceTier.subscribe(() => loadMarkers($selectedDrinkId, $selectedPriceTier));
+    const unsubDrink = selectedDrinkId.subscribe((drinkId) => loadMarkers(drinkId, $selectedPriceTier));
+    const unsubTier = selectedPriceTier.subscribe((tier) => loadMarkers($selectedDrinkId, tier));
 
     return () => {
       unsubDrink();
@@ -167,6 +170,7 @@
   bind:open={submitOpen}
   locationId={submitLocationId}
   locationName={submitLocationName}
+  isEmptyLocation={submitIsEmpty}
   onsubmitted={() => { loadEmptyMarkers(); loadMarkers($selectedDrinkId, $selectedPriceTier); }}
 />
 

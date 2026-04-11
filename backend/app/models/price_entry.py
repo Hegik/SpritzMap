@@ -23,6 +23,7 @@ class PriceEntry(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    unavailable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     note: Mapped[str | None] = mapped_column(String(500))
 
     location: Mapped["Location"] = relationship(back_populates="price_entries")

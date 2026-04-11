@@ -30,5 +30,6 @@ class Location(Base):
     address_postcode: Mapped[str | None] = mapped_column(String(20))
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    no_spritz: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     price_entries: Mapped[list["PriceEntry"]] = relationship(back_populates="location")

@@ -6,11 +6,13 @@
     open = $bindable(false),
     locationId = null,
     locationName = '',
+    isEmptyLocation = false,
     onsubmitted = () => {},
   }: {
     open: boolean;
     locationId: number | null;
     locationName: string;
+    isEmptyLocation?: boolean;
     onsubmitted?: () => void;
   } = $props();
 
@@ -21,6 +23,36 @@
   let error = $state('');
   let success = $state(false);
   let loading = $state(false);
+
+  async function markUnavailable() {
+    if (!locationId || !drinkId) return;
+    loading = true;
+    try {
+      await api.post('/prices/unavailable', { location_id: locationId, drink_id: drinkId });
+      success = true;
+      onsubmitted();
+      setTimeout(() => { open = false; success = false; }, 1500);
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function markNoSpritz() {
+    if (!locationId) return;
+    loading = true;
+    try {
+      await api.post(`/locations/${locationId}/no-spritz`, {});
+      success = true;
+      onsubmitted();
+      setTimeout(() => { open = false; success = false; }, 1500);
+    } catch (e: unknown) {
+      error = e instanceof Error ? e.message : 'Fehler';
+    } finally {
+      loading = false;
+    }
+  }
 
   $effect(() => {
     if ($drinks.length && !drinkId) drinkId = $drinks[0]?.id ?? 0;
@@ -114,6 +146,18 @@
             {loading ? 'Speichern…' : 'Preis melden'}
           </button>
         </form>
+
+        <div class="divider"></div>
+
+        <button class="btn-unavailable" disabled={loading} onclick={markUnavailable}>
+          Diese Sorte gibt es hier nicht
+        </button>
+
+        {#if isEmptyLocation}
+          <button class="btn-no-spritz" disabled={loading} onclick={markNoSpritz}>
+            Hier gibt es generell keinen Spritz
+          </button>
+        {/if}
       {/if}
     </div>
   </div>
@@ -178,4 +222,33 @@
   button[type='submit']:disabled { opacity: 0.6; }
   .error { color: #c00; font-size: 0.875rem; margin: 0; }
   .success { color: green; font-weight: 600; text-align: center; padding: 1rem; }
+
+  .divider { border-top: 1px solid #eee; margin: 0.75rem 0; }
+
+  .btn-unavailable {
+    width: 100%;
+    padding: 8px;
+    background: none;
+    border: 1.5px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #666;
+    cursor: pointer;
+    margin-bottom: 6px;
+  }
+
+  .btn-unavailable:hover { border-color: #aaa; color: #333; }
+
+  .btn-no-spritz {
+    width: 100%;
+    padding: 8px;
+    background: none;
+    border: 1.5px solid #f44336;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    color: #f44336;
+    cursor: pointer;
+  }
+
+  .btn-no-spritz:hover { background: #fff5f5; }
 </style>
