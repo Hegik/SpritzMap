@@ -41,9 +41,10 @@
       const marker = leaflet.marker([lat, lng], { icon });
       const locId = properties!.id;
       const locName = properties!.name;
+      const emptyAddress = properties!.address?.trim().replace(/^,|,$/g, '').trim();
       marker.bindPopup(`
         <strong>${locName}</strong><br>
-        <small>${properties!.address}</small><br>
+        ${emptyAddress ? `<small>${emptyAddress}</small><br>` : ''}
         <em style="color:#aaa;font-size:0.8rem">Noch kein Preis gemeldet</em>
         ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden</button>' : ''}
       `);
@@ -86,10 +87,11 @@
       const marker = leaflet.marker([lat, lng], { icon });
       const locId = properties!.id;
       const locName = properties!.name;
+      const address = properties!.address?.trim().replace(/^,|,$/g, '').trim();
       marker.bindPopup(`
         <strong>${locName}</strong><br>
+        ${address ? `<small>${address}</small><br>` : ''}
         ${properties!.drink_name} — <b>${properties!.price.toFixed(2)} €</b><br>
-        <small>${properties!.address}</small>
         ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden / aktualisieren</button>' : ''}
       `);
       marker.on('popupopen', (e: any) => {
