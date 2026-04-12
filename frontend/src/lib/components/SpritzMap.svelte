@@ -117,9 +117,13 @@
       zoom: 12,
     });
 
-    leaflet.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors',
-      maxZoom: 19,
+    leaflet.tileLayer.wms('https://sgx.geodatenzentrum.de/wms_basemapde', {
+      layers: 'de_basemapde_web_raster_grau',
+      format: 'image/png',
+      transparent: false,
+      version: '1.3.0',
+      attribution: '© GeoBasis-DE / BKG 2024',
+      maxZoom: 20,
     }).addTo(map);
 
     markerLayer = leaflet.layerGroup();
