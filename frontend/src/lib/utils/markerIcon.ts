@@ -55,20 +55,26 @@ function recolorDrinkSvg(colorHex: string, opacity: number): string {
   return svg;
 }
 
-function buildIcon(drinkSvg: string, label: string): string {
-  const size = 'width="48" height="48" style="position:absolute;top:0;left:0;"';
+function buildIcon(drinkSvg: string, label: string, sizePx = 48): string {
+  const size = `width="${sizePx}" height="${sizePx}" style="position:absolute;top:0;left:0;"`;
   const back = spritzBack.replace('<svg ', `<svg ${size} `);
   const drink = drinkSvg.replace('<svg ', `<svg ${size} `);
   const top = spritzTop.replace('<svg ', `<svg ${size} `);
 
   return `
-    <div style="position:relative;width:48px;height:48px;">
+    <div style="position:relative;width:${sizePx}px;height:${sizePx}px;">
       ${back}
       ${drink}
       ${top}
     </div>
     ${label ? `<div class="spritz-label">${label}</div>` : ''}
   `;
+}
+
+export function buildIconHtml(colorHex: string, colorValue: number, sizePx: number): string {
+  const opacity = 0.15 + (colorValue / 255) * 0.85;
+  const drinkSvg = recolorDrinkSvg(colorHex, opacity);
+  return buildIcon(drinkSvg, '', sizePx);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
