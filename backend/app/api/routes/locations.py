@@ -112,6 +112,50 @@ async def get_locations_geojson(
     return {"type": "FeatureCollection", "features": features}
 
 
+@router.get("/geojson/nodata")
+async def get_nodata_locations_geojson(
+    drink_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns active locations that have no current price entry for the given drink."""
+    has_price_sq = (
+        select(PriceEntry.location_id)
+        .where(PriceEntry.drink_id == drink_id)
+        .where(PriceEntry.is_current == True)
+        .where(PriceEntry.unavailable == False)
+    )
+
+    query = (
+        select(
+            Location,
+            ST_X(Location.geom).label("lng"),
+            ST_Y(Location.geom).label("lat"),
+        )
+        .where(Location.is_active == True)
+        .where(Location.no_spritz == False)
+        .where(Location.id.not_in(has_price_sq))
+    )
+
+    results = await db.execute(query)
+    rows = results.all()
+
+    features = []
+    for row in rows:
+        location, lng, lat = row
+        features.append({
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lng, lat]},
+            "properties": {
+                "id": location.id,
+                "name": location.name,
+                "location_type": location.location_type.value,
+                "address": f"{location.address_street or ''}, {location.address_postcode or ''} {location.address_city or ''}".strip(", "),
+            },
+        })
+
+    return {"type": "FeatureCollection", "features": features}
+
+
 @router.post("/{location_id}/no-spritz")
 async def mark_no_spritz(
     location_id: int,

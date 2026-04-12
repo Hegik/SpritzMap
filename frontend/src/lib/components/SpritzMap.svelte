@@ -66,86 +66,52 @@
     if (!map) return;
     markerLayer.clearLayers();
 
-    // When filtering by drink, take over the empty layer too so empty glasses
-    // are replaced with nodata icons. When no drink filter, restore empty glasses.
+    // When filtering by drink, suppress the standalone empty-glass layer —
+    // nodata icons (fetched below) replace it for all unpriced locations.
     if (drinkId) {
       emptyLayer.clearLayers();
-    } else {
-      loadEmptyMarkers();
     }
 
     const params = new URLSearchParams();
     if (drinkId) params.set('drink_id', String(drinkId));
     if (priceTier) params.set('price_tier', priceTier);
 
-    const res = await fetch(`${API_URL}/locations/geojson?${params}`);
+    // Fetch colored markers and (when drink is selected) nodata markers in parallel
+    const fetches: [Promise<Response>, Promise<Response> | null] = [
+      fetch(`${API_URL}/locations/geojson?${params}`),
+      drinkId ? fetch(`${API_URL}/locations/geojson/nodata?drink_id=${drinkId}`) : null,
+    ];
+    const [res, nodataRes] = await Promise.all(fetches);
     if (!res.ok) return;
     const geojson: GeoJSON.FeatureCollection = await res.json();
 
-    if (geojson.features.length === 0 && drinkId) {
-      // Keine Daten für diesen Filter — alle Locations mit Nodata-Icon anzeigen
-      const [allRes, emptyRes] = await Promise.all([
-        fetch(`${API_URL}/locations/geojson?drink_id=${drinkId}`),
-        fetch(`${API_URL}/locations/geojson/empty`),
-      ]);
-      const addNodataMarker = (feature: GeoJSON.Feature<GeoJSON.Point>, label: string) => {
-        const { geometry, properties } = feature;
+    // Nodata icons — locations with no price for the selected drink
+    if (nodataRes?.ok) {
+      const nodataGeojson: GeoJSON.FeatureCollection = await nodataRes.json();
+      for (const feature of nodataGeojson.features) {
+        const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
         const [lng, lat] = geometry.coordinates;
         const icon = createNodataGlassIcon(leaflet);
         const marker = leaflet.marker([lat, lng], { icon });
+        const locName = properties!.name;
         const address = properties!.address?.trim().replace(/^,|,$/g, '').trim();
         marker.bindPopup(`
-          <strong>${properties!.name}</strong><br>
+          <strong>${locName}</strong><br>
           ${address ? `<small>${address}</small><br>` : ''}
-          <em style="color:#aaa;font-size:0.8rem">${label}</em>
+          <em style="color:#aaa;font-size:0.8rem">Noch kein Preis für diesen Drink</em>
+          ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden</button>' : ''}
         `);
-        markerLayer.addLayer(marker);
-      };
-      if (allRes.ok) {
-        const allGeojson: GeoJSON.FeatureCollection = await allRes.json();
-        for (const feature of allGeojson.features) {
-          addNodataMarker(feature as GeoJSON.Feature<GeoJSON.Point>, 'Kein Preis für diesen Filter');
-        }
-      }
-      if (emptyRes.ok) {
-        const emptyGeojson: GeoJSON.FeatureCollection = await emptyRes.json();
-        for (const feature of emptyGeojson.features) {
-          addNodataMarker(feature as GeoJSON.Feature<GeoJSON.Point>, 'Noch kein Preis gemeldet');
-        }
-      }
-      return;
-    }
-
-    // There are results — also add nodata icons for truly-empty locations
-    if (drinkId) {
-      const emptyRes = await fetch(`${API_URL}/locations/geojson/empty`);
-      if (emptyRes.ok) {
-        const emptyGeojson: GeoJSON.FeatureCollection = await emptyRes.json();
-        for (const feature of emptyGeojson.features) {
-          const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
-          const [lng, lat] = geometry.coordinates;
-          const icon = createNodataGlassIcon(leaflet);
-          const marker = leaflet.marker([lat, lng], { icon });
-          const locName = properties!.name;
-          const emptyAddress = properties!.address?.trim().replace(/^,|,$/g, '').trim();
-          marker.bindPopup(`
-            <strong>${locName}</strong><br>
-            ${emptyAddress ? `<small>${emptyAddress}</small><br>` : ''}
-            <em style="color:#aaa;font-size:0.8rem">Noch kein Preis gemeldet</em>
-            ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden</button>' : ''}
-          `);
-          marker.on('popupopen', (e: any) => {
-            const btn = e.popup.getElement()?.querySelector('.popup-btn');
-            btn?.addEventListener('click', () => {
-              submitLocationId = properties!.id;
-              submitLocationName = locName;
-              submitIsEmpty = true;
-              submitOpen = true;
-              map.closePopup();
-            });
+        marker.on('popupopen', (e: any) => {
+          const btn = e.popup.getElement()?.querySelector('.popup-btn');
+          btn?.addEventListener('click', () => {
+            submitLocationId = properties!.id;
+            submitLocationName = locName;
+            submitIsEmpty = true;
+            submitOpen = true;
+            map.closePopup();
           });
-          markerLayer.addLayer(marker);
-        }
+        });
+        markerLayer.addLayer(marker);
       }
     }
 
