@@ -123,13 +123,18 @@
     markerLayer = leaflet.layerGroup();
     emptyLayer = leaflet.layerGroup();
 
-    wmsLayer = leaflet.tileLayer.wms(`${GEOSERVER_URL}/wms`, {
-      layers: 'spritzmap:lor_price_summary',
-      format: 'image/png',
-      transparent: true,
-      opacity: 0.4,
-      attribution: 'SpritzMap LOR Layer',
-    });
+    function createWmsLayer(drinkId: number | null) {
+      return leaflet.tileLayer.wms(`${GEOSERVER_URL}/wms`, {
+        layers: 'spritzmap:lor_price_summary',
+        format: 'image/png',
+        transparent: true,
+        opacity: 0.4,
+        attribution: 'SpritzMap LOR Layer',
+        viewparams: `drink_id:${drinkId ?? 1}`,
+      });
+    }
+
+    wmsLayer = createWmsLayer($selectedDrinkId);
 
     function applyZoomLayers() {
       const zoom = map.getZoom();
@@ -150,7 +155,12 @@
     await loadEmptyMarkers();
     await loadMarkers(null, null);
 
-    const unsubDrink = selectedDrinkId.subscribe((drinkId) => loadMarkers(drinkId, $selectedPriceTier));
+    const unsubDrink = selectedDrinkId.subscribe((drinkId) => {
+      loadMarkers(drinkId, $selectedPriceTier);
+      if (map.hasLayer(wmsLayer)) map.removeLayer(wmsLayer);
+      wmsLayer = createWmsLayer(drinkId);
+      if (map.getZoom() < 16) wmsLayer.addTo(map);
+    });
     const unsubTier = selectedPriceTier.subscribe((tier) => loadMarkers($selectedDrinkId, tier));
 
     return () => {
