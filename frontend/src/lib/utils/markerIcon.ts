@@ -1,7 +1,7 @@
 import spritzBack from '$lib/assets/spritz_back.svg?raw';
 import spritzDrink from '$lib/assets/spritz_drink.svg?raw';
 import spritzTop from '$lib/assets/spritz_top.svg?raw';
-import drinkNodata from '$lib/assets/drink_nodata.svg?raw';
+import spritzNodata from '$lib/assets/spritz_nodata.svg?raw';
 
 // Original drink colors and their lightness ratios relative to the base (#ba0c38)
 // Base HSL: hue~345, sat~90%, lightness~38%
@@ -108,8 +108,7 @@ export function createEmptyGlassIcon(L: any) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createNodataGlassIcon(L: any) {
-  const size = 'width="48" height="48" style="position:absolute;top:0;left:0;"';
-  const svg = drinkNodata.replace('<svg ', `<svg ${size} `);
+  const svg = spritzNodata.replace('<svg ', '<svg width="48" height="48" ');
   const html = `<div style="position:relative;width:48px;height:48px;">${svg}</div>`;
 
   return L.divIcon({
