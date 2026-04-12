@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { selectedDrinkId, selectedPriceTier } from '$lib/stores/map';
-  import { createGlassIcon, createEmptyGlassIcon } from '$lib/utils/markerIcon';
+  import { createGlassIcon, createEmptyGlassIcon, createNodataGlassIcon } from '$lib/utils/markerIcon';
   import PriceSubmitModal from '$lib/components/PriceSubmitModal.svelte';
   import { isLoggedIn } from '$lib/stores/auth';
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -74,6 +74,28 @@
     if (!res.ok) return;
     const geojson: GeoJSON.FeatureCollection = await res.json();
 
+    if (geojson.features.length === 0 && drinkId) {
+      // Keine Daten für diesen Filter — alle Locations mit Nodata-Icon anzeigen
+      const allRes = await fetch(`${API_URL}/locations/geojson?drink_id=${drinkId}`);
+      if (allRes.ok) {
+        const allGeojson: GeoJSON.FeatureCollection = await allRes.json();
+        for (const feature of allGeojson.features) {
+          const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
+          const [lng, lat] = geometry.coordinates;
+          const icon = createNodataGlassIcon(leaflet);
+          const marker = leaflet.marker([lat, lng], { icon });
+          const address = properties!.address?.trim().replace(/^,|,$/g, '').trim();
+          marker.bindPopup(`
+            <strong>${properties!.name}</strong><br>
+            ${address ? `<small>${address}</small><br>` : ''}
+            <em style="color:#aaa;font-size:0.8rem">Kein Preis für diesen Filter</em>
+          `);
+          markerLayer.addLayer(marker);
+        }
+      }
+      return;
+    }
+
     for (const feature of geojson.features) {
       const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
       const [lng, lat] = geometry.coordinates;
@@ -88,8 +110,10 @@
       const locId = properties!.id;
       const locName = properties!.name;
       const address = properties!.address?.trim().replace(/^,|,$/g, '').trim();
+      const iconHtml = icon.options.html;
       marker.bindPopup(`
         <strong>${locName}</strong><br>
+        <div style="width:200px;margin:6px 0;">${iconHtml}</div>
         ${address ? `<small>${address}</small><br>` : ''}
         ${properties!.drink_name} — <b>${properties!.price.toFixed(2)} €</b><br>
         ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden / aktualisieren</button>' : ''}
@@ -124,6 +148,7 @@
       version: '1.3.0',
       attribution: '© GeoBasis-DE / BKG 2024',
       maxZoom: 20,
+      opacity: 0.5,
     }).addTo(map);
 
     markerLayer = leaflet.layerGroup();

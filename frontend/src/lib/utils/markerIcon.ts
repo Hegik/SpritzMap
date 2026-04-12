@@ -1,15 +1,16 @@
 import spritzBack from '$lib/assets/spritz_back.svg?raw';
 import spritzDrink from '$lib/assets/spritz_drink.svg?raw';
 import spritzTop from '$lib/assets/spritz_top.svg?raw';
+import drinkNodata from '$lib/assets/drink_nodata.svg?raw';
 
 // Original drink colors and their lightness ratios relative to the base (#ba0c38)
 // Base HSL: hue~345, sat~90%, lightness~38%
 const DRINK_COLORS = [
-  { hex: '#ba0c38', ratio: 1.00 },   // base — Oberfläche
-  { hex: '#890023', ratio: 0.735 },  // Hauptkörper
-  { hex: '#600c1b', ratio: 0.530 },  // Schatten links
-  { hex: '#410001', ratio: 0.355 },  // tiefer Schatten
-  { hex: '#310000', ratio: 0.265 },  // dunkelster Rand
+  { hex: '#ff6e00', ratio: 1.000 },  // base — Oberfläche
+  { hex: '#f24b00', ratio: 0.949 },  // Hauptkörper
+  { hex: '#e94900', ratio: 0.914 },  // Schatten links
+  { hex: '#db4400', ratio: 0.859 },  // tiefer Schatten
+  { hex: '#cf4000', ratio: 0.812 },  // dunkelster Rand
 ];
 
 function hexToHsl(hex: string): [number, number, number] {
@@ -89,6 +90,21 @@ export function createGlassIcon(L: any, colorHex: string, colorValue: number, pr
 export function createEmptyGlassIcon(L: any) {
   const drinkSvg = recolorDrinkSvg('#cccccc', 0.3);
   const html = buildIcon(drinkSvg, '');
+
+  return L.divIcon({
+    html,
+    className: 'spritz-marker',
+    iconSize: [48, 60],
+    iconAnchor: [24, 52],
+    popupAnchor: [0, -54],
+  });
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createNodataGlassIcon(L: any) {
+  const size = 'width="48" height="48" style="position:absolute;top:0;left:0;"';
+  const svg = drinkNodata.replace('<svg ', `<svg ${size} `);
+  const html = `<div style="position:relative;width:48px;height:48px;">${svg}</div>`;
 
   return L.divIcon({
     html,
