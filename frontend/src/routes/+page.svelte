@@ -48,12 +48,8 @@
   </header>
 
   <main>
-    <div class="sidebar">
-      <FilterPanel />
-    </div>
-    <div class="map-wrap">
-      <SpritzMap bind:this={spritzMap} />
-    </div>
+    <SpritzMap bind:this={spritzMap} />
+    <FilterPanel />
   </main>
 </div>
 
@@ -107,15 +103,9 @@
     font-weight: 600;
   }
 
-  main { display: flex; flex: 1; overflow: hidden; }
-
-  .sidebar { padding: 1rem; overflow-y: auto; z-index: 5; }
-
-  .map-wrap { flex: 1; position: relative; }
-
-  @media (max-width: 640px) {
-    main { flex-direction: column-reverse; }
-    .sidebar { padding: 0.75rem; display: flex; gap: 8px; overflow-x: auto; }
-    .map-wrap { flex: 1; }
+  main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
   }
 </style>

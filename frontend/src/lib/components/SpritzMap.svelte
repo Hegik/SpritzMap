@@ -232,6 +232,14 @@
 
 <div bind:this={mapEl} class="map-container"></div>
 
+<button
+  class="locate-btn"
+  title="Mein Standort"
+  onclick={() => map?.locate({ setView: true, maxZoom: 17 })}
+>
+  ◎
+</button>
+
 <PriceSubmitModal
   bind:open={submitOpen}
   locationId={submitLocationId}
@@ -245,6 +253,30 @@
     width: 100%;
     height: 100%;
     z-index: 0;
+  }
+
+  .locate-btn {
+    position: absolute;
+    bottom: 1.5rem;
+    right: 0.65rem;
+    z-index: 5;
+    width: 34px;
+    height: 34px;
+    background: white;
+    border: 2px solid rgba(0,0,0,0.25);
+    border-radius: 4px;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+    padding: 0;
+  }
+
+  .locate-btn:hover {
+    background: #f4f4f4;
   }
 
   :global(.spritz-marker) {
