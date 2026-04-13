@@ -50,72 +50,88 @@ function recolorDrinkSvg(colorHex: string, opacity: number): string {
     svg = svg.replaceAll(hex, newHex);
   }
 
-  // Apply opacity to the group
   svg = svg.replace('<g id="Getränke">', `<g id="Getränke" opacity="${opacity.toFixed(2)}">`);
   return svg;
 }
 
-function buildIcon(drinkSvg: string, label: string, sizePx = 48): string {
+// Extract inner content of an SVG string (strips xml declaration + outer <svg> tag)
+function innerSvg(svg: string): string {
+  return svg.match(/<svg[^>]*>([\s\S]*)<\/svg>/)?.[1] ?? '';
+}
+
+// Rasterize an SVG string to a PNG data URL via canvas
+function svgToDataUrl(svgString: string, sizePx: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([svgString], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = sizePx;
+      canvas.height = sizePx;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, sizePx, sizePx);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('SVG rasterization failed')); };
+    img.src = url;
+  });
+}
+
+// Cache stores Promises so concurrent calls for the same key share one rasterization
+const dataUrlCache = new Map<string, Promise<string>>();
+
+function getDataUrl(key: string, svgString: string, sizePx: number): Promise<string> {
+  if (!dataUrlCache.has(key)) {
+    dataUrlCache.set(key, svgToDataUrl(svgString, sizePx));
+  }
+  return dataUrlCache.get(key)!;
+}
+
+function buildCompositeSvg(drinkSvg: string, sizePx: number): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${sizePx}" height="${sizePx}" viewBox="0 0 410.2 405.2">
+    ${innerSvg(spritzBack)}
+    ${innerSvg(drinkSvg)}
+    ${innerSvg(spritzTop)}
+  </svg>`;
+}
+
+// buildIconHtml stays synchronous — used only for popup previews (not performance-critical)
+export function buildIconHtml(colorHex: string, colorValue: number, sizePx: number): string {
+  const opacity = 0.15 + (colorValue / 255) * 0.85;
+  const drinkSvg = recolorDrinkSvg(colorHex, opacity);
   const size = `width="${sizePx}" height="${sizePx}" style="position:absolute;top:0;left:0;"`;
   const back = spritzBack.replace('<svg ', `<svg ${size} `);
   const drink = drinkSvg.replace('<svg ', `<svg ${size} `);
   const top = spritzTop.replace('<svg ', `<svg ${size} `);
-
-  return `
-    <div style="position:relative;width:${sizePx}px;height:${sizePx}px;">
-      ${back}
-      ${drink}
-      ${top}
-    </div>
-    ${label ? `<div class="spritz-label">${label}</div>` : ''}
-  `;
-}
-
-export function buildIconHtml(colorHex: string, colorValue: number, sizePx: number): string {
-  const opacity = 0.15 + (colorValue / 255) * 0.85;
-  const drinkSvg = recolorDrinkSvg(colorHex, opacity);
-  return buildIcon(drinkSvg, '', sizePx);
+  return `<div style="position:relative;width:${sizePx}px;height:${sizePx}px;">${back}${drink}${top}</div>`;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createGlassIcon(L: any, colorHex: string, colorValue: number, priceTier: string) {
+export async function createGlassIcon(L: any, colorHex: string, colorValue: number, priceTier: string) {
+  const quantized = Math.round(colorValue / 5) * 5;
+  const key = `${colorHex}-${quantized}`;
+
   const opacity = 0.15 + (colorValue / 255) * 0.85;
   const drinkSvg = recolorDrinkSvg(colorHex, opacity);
-  const html = buildIcon(drinkSvg, priceTier);
+  const dataUrl = await getDataUrl(key, buildCompositeSvg(drinkSvg, 48), 48);
 
-  return L.divIcon({
-    html,
-    className: 'spritz-marker',
-    iconSize: [48, 60],
-    iconAnchor: [24, 52],
-    popupAnchor: [0, -54],
-  });
+  const html = `<img src="${dataUrl}" width="48" height="48" style="display:block;" />${priceTier ? `<div class="spritz-label">${priceTier}</div>` : ''}`;
+  return L.divIcon({ html, className: 'spritz-marker', iconSize: [48, 60], iconAnchor: [24, 52], popupAnchor: [0, -54] });
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createEmptyGlassIcon(L: any) {
+export async function createEmptyGlassIcon(L: any) {
   const drinkSvg = recolorDrinkSvg('#cccccc', 0.3);
-  const html = buildIcon(drinkSvg, '');
-
-  return L.divIcon({
-    html,
-    className: 'spritz-marker',
-    iconSize: [48, 60],
-    iconAnchor: [24, 52],
-    popupAnchor: [0, -54],
-  });
+  const dataUrl = await getDataUrl('__empty__', buildCompositeSvg(drinkSvg, 48), 48);
+  const html = `<img src="${dataUrl}" width="48" height="48" style="display:block;" />`;
+  return L.divIcon({ html, className: 'spritz-marker', iconSize: [48, 60], iconAnchor: [24, 52], popupAnchor: [0, -54] });
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createNodataGlassIcon(L: any) {
-  const svg = spritzNodata.replace('<svg ', '<svg width="48" height="48" ');
-  const html = `<div style="position:relative;width:48px;height:48px;">${svg}</div>`;
-
-  return L.divIcon({
-    html,
-    className: 'spritz-marker',
-    iconSize: [48, 60],
-    iconAnchor: [24, 52],
-    popupAnchor: [0, -54],
-  });
+export async function createNodataGlassIcon(L: any) {
+  const svgWithSize = spritzNodata.replace('<svg ', `<svg width="48" height="48" `);
+  const dataUrl = await getDataUrl('__nodata__', svgWithSize, 48);
+  const html = `<img src="${dataUrl}" width="48" height="48" style="display:block;" />`;
+  return L.divIcon({ html, className: 'spritz-marker', iconSize: [48, 60], iconAnchor: [24, 52], popupAnchor: [0, -54] });
 }

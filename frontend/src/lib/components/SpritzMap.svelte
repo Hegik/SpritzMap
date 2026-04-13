@@ -33,12 +33,12 @@
     if (!res.ok) return;
     const geojson: GeoJSON.FeatureCollection = await res.json();
 
+    const emptyIcon = await createEmptyGlassIcon(leaflet);
     for (const feature of geojson.features) {
       const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
       const [lng, lat] = geometry.coordinates;
-      const icon = createEmptyGlassIcon(leaflet);
 
-      const marker = leaflet.marker([lat, lng], { icon });
+      const marker = leaflet.marker([lat, lng], { icon: emptyIcon });
       const locId = properties!.id;
       const locName = properties!.name;
       const emptyAddress = properties!.address?.trim().replace(/^,|,$/g, '').trim();
@@ -88,11 +88,11 @@
     // Nodata icons — locations with no price for the selected drink
     if (nodataRes?.ok) {
       const nodataGeojson: GeoJSON.FeatureCollection = await nodataRes.json();
+      const nodataIcon = await createNodataGlassIcon(leaflet);
       for (const feature of nodataGeojson.features) {
         const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
         const [lng, lat] = geometry.coordinates;
-        const icon = createNodataGlassIcon(leaflet);
-        const marker = leaflet.marker([lat, lng], { icon });
+        const marker = leaflet.marker([lat, lng], { icon: nodataIcon });
         const locName = properties!.name;
         const address = properties!.address?.trim().replace(/^,|,$/g, '').trim();
         marker.bindPopup(`
@@ -115,10 +115,10 @@
       }
     }
 
-    for (const feature of geojson.features) {
+    const coloredMarkers = await Promise.all(geojson.features.map(async (feature) => {
       const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
       const [lng, lat] = geometry.coordinates;
-      const icon = createGlassIcon(
+      const icon = await createGlassIcon(
         leaflet,
         properties!.drink_color_hex,
         properties!.avg_color_value,
@@ -147,8 +147,9 @@
           map.closePopup();
         });
       });
-      markerLayer.addLayer(marker);
-    }
+      return marker;
+    }));
+    coloredMarkers.forEach(m => markerLayer.addLayer(m));
   }
 
   onMount(async () => {
@@ -188,7 +189,7 @@
 
     function applyZoomLayers() {
       const zoom = map.getZoom();
-      if (zoom < 16) {
+      if (zoom < 17) {
         if (!map.hasLayer(wmsLayer)) wmsLayer.addTo(map);
         if (map.hasLayer(markerLayer)) map.removeLayer(markerLayer);
         if (map.hasLayer(emptyLayer)) map.removeLayer(emptyLayer);
