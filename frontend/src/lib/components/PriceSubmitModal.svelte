@@ -102,7 +102,7 @@
       onkeydown={(e) => e.stopPropagation()}
       role="presentation"
     >
-      <h2>Preis melden</h2>
+      <h2>Spritz hinzufügen</h2>
       <p class="location-name">{locationName}</p>
 
       {#if success}
@@ -154,7 +154,7 @@
           {/if}
 
           <button type="submit" disabled={loading}>
-            {loading ? 'Speichern…' : 'Preis melden'}
+            {loading ? 'Speichern…' : 'Spritz hinzufügen'}
           </button>
         </form>
 

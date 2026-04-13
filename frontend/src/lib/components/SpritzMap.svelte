@@ -144,7 +144,7 @@
         id: 'markers-layer',
         type: 'symbol',
         source: 'markers',
-        minzoom: 16,
+        minzoom: 15,
         layout: {
           'icon-image': ['get', 'icon'],
           'icon-size': 1,
@@ -189,13 +189,13 @@
       const popupIconHtml = buildIconHtml(props.drink_color_hex, props.avg_color_value, 200);
       html += `<div style="display:flex;justify-content:center;margin:6px 0;">${popupIconHtml}</div>`;
       html += `${props.drink_name} — <b>${Number(props.price).toFixed(2)} €</b><br>`;
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">Preis melden / aktualisieren</button>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">Spritz hinzufügen</button>`;
     } else if (props.popup_type === 'nodata') {
       html += `<em style="color:#aaa;font-size:0.8rem">Noch kein Preis für diesen Drink</em>`;
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">Preis melden</button>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">Spritz hinzufügen</button>`;
     } else {
       html += `<em style="color:#aaa;font-size:0.8rem">Noch kein Preis gemeldet</em>`;
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">Preis melden</button>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">Spritz hinzufügen</button>`;
     }
 
     popup.setLngLat(coords).setHTML(html).addTo(map);
@@ -242,7 +242,7 @@
         layers: [
           { id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-opacity': 0.5 } },
           { id: 'wms-lor', type: 'raster', source: 'wms-lor', paint: { 'raster-opacity': 1 },
-            minzoom: 0, maxzoom: 16 },
+            minzoom: 0, maxzoom: 15 },
         ],
       },
       center: [13.405, 52.52],

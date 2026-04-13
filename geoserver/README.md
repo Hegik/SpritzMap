@@ -23,7 +23,7 @@ WITH lor_stats AS (
     AVG(pe.price)        AS avg_price,
     AVG(pe.color_value)  AS avg_color_value,
     COUNT(pe.id)         AS entry_count
-  FROM lor_planungsraeume l
+  FROM lor l
   LEFT JOIN locations loc
     ON ST_Within(loc.geom, ST_Transform(l.geom, 4326))
   LEFT JOIN price_entries pe

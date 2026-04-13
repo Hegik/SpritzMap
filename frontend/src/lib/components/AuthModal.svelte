@@ -12,6 +12,7 @@
   let username = $state('');
   let password = $state('');
   let error = $state('');
+  let info = $state('');
   let loading = $state(false);
 
   async function submit() {
@@ -28,10 +29,10 @@
       } else if (mode === 'register') {
         await api.post('/auth/register', { email, username, password });
         mode = 'login';
-        error = 'Registrierung erfolgreich — bitte bestätige deine E-Mail.';
+        info = 'Registrierung erfolgreich — bitte bestätige deine E-Mail.';
       } else {
         await api.post('/auth/forgot-password', { email });
-        error = 'Falls die E-Mail existiert, wurde ein Link gesendet.';
+        info = 'Falls die E-Mail existiert, wurde ein Link gesendet.';
       }
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : 'Fehler';
@@ -84,6 +85,9 @@
           </label>
         {/if}
 
+        {#if info}
+          <p class="info">{info}</p>
+        {/if}
         {#if error}
           <p class="error">{error}</p>
         {/if}
@@ -93,7 +97,7 @@
         </button>
       </form>
 
-      <button class="switch" onclick={() => { mode = mode === 'login' ? 'register' : 'login'; error = ''; }}>
+      <button class="switch" onclick={() => { mode = mode === 'login' ? 'register' : 'login'; error = ''; info = ''; }}>
         {mode === 'login' ? 'Noch kein Konto? Registrieren' : mode === 'register' ? 'Schon ein Konto? Einloggen' : 'Zurück zum Login'}
       </button>
       {#if mode === 'login'}
@@ -164,4 +168,5 @@
   }
 
   .error { color: #c00; font-size: 0.875rem; margin: 0; }
+  .info { color: green; font-size: 0.875rem; margin: 0; }
 </style>
