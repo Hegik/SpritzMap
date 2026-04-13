@@ -17,7 +17,8 @@ geoserver/  — kartoza/geoserver Docker image, reads from the same DB
 **Key data flow:**
 - Locations are synced from OSM (Overpass API) on startup + every 24h (`backend/app/services/osm_sync.py`)
 - `GET /locations/geojson` returns filtered GeoJSON for Leaflet markers
-- GeoServer publishes a WMS layer `spritzmap:lor_price_summary` — shown at zoom < 13, hidden at zoom ≥ 13
+- GeoServer publishes a WMS layer `spritzmap:lor_price_summary` — shown at zoom < 17, hidden at zoom ≥ 17
+- The layer is parameterized via `viewparams=drink_id:X`; color and index are computed per-drink in SQL
 
 ## Development Commands
 
@@ -94,3 +95,7 @@ Each service is a separate Coolify application backed by the shared PostgreSQL i
 - Svelte stores (`authStore`, `drinks`, `selectedDrinkId`, `selectedPriceTier`) are used for cross-component state
 - `on:click` → `onclick` (Svelte 5 native event syntax)
 - Leaflet is imported dynamically inside `onMount` to avoid SSR issues
+
+## Offene Aufgaben
+
+- 

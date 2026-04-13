@@ -176,7 +176,7 @@
 
     function createWmsLayer(drinkId: number | null) {
       return leaflet.tileLayer.wms(`${GEOSERVER_URL}/wms`, {
-        layers: 'spritzmap:lor_price_summary',
+        layers: 'spritzmap:lor_index',
         format: 'image/png',
         transparent: true,
         opacity: 0.4,
