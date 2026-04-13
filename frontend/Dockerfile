@@ -1,15 +1,16 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --ignore-scripts
 COPY . .
-RUN npm run build
+RUN node --max-old-space-size=1024 node_modules/.bin/svelte-kit sync && \
+    node --max-old-space-size=1024 node_modules/.bin/vite build
 
 FROM node:20-alpine
 WORKDIR /app
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/package.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev --ignore-scripts
 EXPOSE 3000
 ENV NODE_ENV=production
 CMD ["node", "build"]
