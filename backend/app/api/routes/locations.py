@@ -117,12 +117,12 @@ async def get_nodata_locations_geojson(
     drink_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    """Returns active locations that have no current price entry for the given drink."""
-    has_price_sq = (
+    """Returns active locations that have no current price entry for the given drink
+    and have not been marked as unavailable for that drink."""
+    has_entry_sq = (
         select(PriceEntry.location_id)
         .where(PriceEntry.drink_id == drink_id)
         .where(PriceEntry.is_current == True)
-        .where(PriceEntry.unavailable == False)
     )
 
     query = (
@@ -133,7 +133,7 @@ async def get_nodata_locations_geojson(
         )
         .where(Location.is_active == True)
         .where(Location.no_spritz == False)
-        .where(Location.id.not_in(has_price_sq))
+        .where(Location.id.not_in(has_entry_sq))
     )
 
     results = await db.execute(query)
