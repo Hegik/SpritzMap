@@ -8,6 +8,7 @@
   import { api } from '$lib/api/client';
 
   let authOpen = $state(false);
+  let spritzMap: ReturnType<typeof SpritzMap>;
 
   onMount(async () => {
     const list = await api.get<typeof $drinks>('/drinks/');
@@ -51,12 +52,12 @@
       <FilterPanel />
     </div>
     <div class="map-wrap">
-      <SpritzMap />
+      <SpritzMap bind:this={spritzMap} />
     </div>
   </main>
 </div>
 
-<AuthModal bind:open={authOpen} />
+<AuthModal bind:open={authOpen} onloggedin={() => spritzMap?.reloadMarkers()} />
 
 <style>
   :global(*, *::before, *::after) { box-sizing: border-box; margin: 0; padding: 0; }

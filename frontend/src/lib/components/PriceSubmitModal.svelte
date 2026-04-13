@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { drinks } from '$lib/stores/map';
+  import { drinks, selectedDrinkId } from '$lib/stores/map';
   import { api } from '$lib/api/client';
   import { buildIconHtml } from '$lib/utils/markerIcon';
 
@@ -56,7 +56,7 @@
   }
 
   $effect(() => {
-    if ($drinks.length && !drinkId) drinkId = $drinks[0]?.id ?? 0;
+    if ($drinks.length) drinkId = $selectedDrinkId ?? $drinks[0]?.id ?? 0;
   });
 
   const selectedDrinkColor = $derived(

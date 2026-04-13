@@ -2,7 +2,10 @@
   import { authStore } from '$lib/stores/auth';
   import { api } from '$lib/api/client';
 
-  let { open = $bindable(false) } = $props();
+  let {
+    open = $bindable(false),
+    onloggedin = () => {},
+  }: { open: boolean; onloggedin?: () => void } = $props();
 
   let mode = $state<'login' | 'register' | 'forgot'>('login');
   let email = $state('');
@@ -21,6 +24,7 @@
         const me = await api.get<{ id: number; email: string; username: string; role: 'user' | 'moderator' | 'admin' }>('/auth/me');
         authStore.setUser(me);
         open = false;
+        onloggedin();
       } else if (mode === 'register') {
         await api.post('/auth/register', { email, username, password });
         mode = 'login';

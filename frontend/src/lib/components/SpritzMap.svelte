@@ -8,6 +8,11 @@
   let leaflet: any;
 
   let mapEl: HTMLDivElement;
+
+  export function reloadMarkers() {
+    loadEmptyMarkers();
+    loadMarkers($selectedDrinkId, $selectedPriceTier);
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let map: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -269,5 +274,8 @@
     color: #333;
     text-shadow: 0 1px 2px white;
     margin-top: 2px;
+    text-align: center;
+    letter-spacing: 0;
+    width: 48px;
   }
 </style>
