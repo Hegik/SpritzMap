@@ -263,16 +263,18 @@
       await loadMarkers($selectedDrinkId, $selectedPriceTier);
 
       // Subscribe after map is ready — first call fires immediately with current value
+      const updateWms = (drinkId: number | null) => {
+        const src = map.getSource('wms-lor') as any;
+        if (src?.setTiles) {
+          src.setTiles([`${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`]);
+        }
+      };
+
       let firstDrink = true;
       unsubDrink = selectedDrinkId.subscribe((drinkId) => {
-        if (firstDrink) { firstDrink = false; return; } // skip initial fire, already loaded above
+        if (firstDrink) { firstDrink = false; return; }
         loadMarkers(drinkId, $selectedPriceTier);
-        const src = map.getSource('wms-lor') as any;
-        if (src) {
-          src.tiles = [`${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`];
-          map.style.sourceCaches['wms-lor']?.clearTiles();
-          map.triggerRepaint();
-        }
+        updateWms(drinkId);
       });
 
       let firstTier = true;
