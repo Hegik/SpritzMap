@@ -29,8 +29,17 @@
   }
 
   function updateBasemapTint(drinkId: number | null) {
-    if (!map?.getLayer('drink-tint')) return;
-    map.setPaintProperty('drink-tint', 'background-color', getDrinkColor(drinkId));
+    if (!map?.getLayer('basemap')) return;
+    const color = getDrinkColor(drinkId);
+    // Rec. 709 luminance weights — works well for this grayscale basemap
+    map.setPaintProperty('basemap', 'raster-color-mix', [0.2126, 0.7152, 0.0722, 0]);
+    // Remap luminance: darks stay dark, mid-grays shift to drink color, whites stay white
+    map.setPaintProperty('basemap', 'raster-color', [
+      'interpolate', ['linear'], ['raster-value'],
+      0,    '#111111',
+      0.55, color,
+      1,    '#ffffff',
+    ]);
   }
 
   // Image name registry — track which icon keys are already added to the map
@@ -311,19 +320,8 @@
         map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
       }
 
-      // Drink-color tint overlay — appears at zoom ≥ 15 when LOR layer hides
-      map.addLayer(
-        {
-          id: 'drink-tint',
-          type: 'background',
-          minzoom: 15,
-          paint: {
-            'background-color': getDrinkColor($selectedDrinkId),
-            'background-opacity': 0.12,
-          },
-        },
-        'wms-lor', // insert just below the WMS layer (behind markers)
-      );
+      // Apply drink-color tint to the basemap via luminance remapping
+      updateBasemapTint($selectedDrinkId);
 
       // Initial load
       await loadMarkers($selectedDrinkId, $selectedPriceTier);
