@@ -344,6 +344,12 @@
     padding: 0;
   }
 
+  @media (max-width: 640px) {
+    .locate-btn {
+      bottom: 4.5rem;
+    }
+  }
+
   .locate-btn:hover { background: #f4f4f4; }
 
   :global(.popup-btn) {
@@ -360,9 +366,21 @@
   }
 
   :global(.maplibregl-popup-content) {
-    border-radius: 8px;
-    padding: 12px 14px;
+    border-radius: 12px;
+    padding: 2rem;
     font-family: system-ui, sans-serif;
     font-size: 0.875rem;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    border: none;
+  }
+
+  :global(.maplibregl-popup-tip) {
+    display: none;
+  }
+
+  :global(.maplibregl-popup-close-button) {
+    font-size: 1.2rem;
+    padding: 0.25rem 0.5rem;
+    color: #666;
   }
 </style>
