@@ -54,7 +54,7 @@
       class="modal"
       onclick={(e) => e.stopPropagation()}
       onkeydown={(e) => e.stopPropagation()}
-      role="document"
+      role="presentation"
     >
       <h2>{mode === 'login' ? 'Einloggen' : mode === 'register' ? 'Registrieren' : 'Passwort vergessen'}</h2>
 

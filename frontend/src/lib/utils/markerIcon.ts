@@ -4,13 +4,12 @@ import spritzTop from '$lib/assets/spritz_top.svg?raw';
 import spritzNodata from '$lib/assets/spritz_nodata.svg?raw';
 
 // Original drink colors and their lightness ratios relative to the base (#ba0c38)
-// Base HSL: hue~345, sat~90%, lightness~38%
 const DRINK_COLORS = [
-  { hex: '#ff6e00', ratio: 1.000 },  // base — Oberfläche
-  { hex: '#f24b00', ratio: 0.949 },  // Hauptkörper
-  { hex: '#e94900', ratio: 0.914 },  // Schatten links
-  { hex: '#db4400', ratio: 0.859 },  // tiefer Schatten
-  { hex: '#cf4000', ratio: 0.812 },  // dunkelster Rand
+  { hex: '#ff6e00', ratio: 1.000 },
+  { hex: '#f24b00', ratio: 0.949 },
+  { hex: '#e94900', ratio: 0.914 },
+  { hex: '#db4400', ratio: 0.859 },
+  { hex: '#cf4000', ratio: 0.812 },
 ];
 
 function hexToHsl(hex: string): [number, number, number] {
@@ -43,23 +42,27 @@ function hslToHex(h: number, s: number, l: number): string {
 function recolorDrinkSvg(colorHex: string, opacity: number): string {
   const [h, s, lBase] = hexToHsl(colorHex);
   let svg = spritzDrink;
-
   for (const { hex, ratio } of DRINK_COLORS) {
     const newL = Math.min(lBase * ratio * (1 / DRINK_COLORS[0].ratio), 95);
     const newHex = hslToHex(h, s, newL);
     svg = svg.replaceAll(hex, newHex);
   }
-
   svg = svg.replace('<g id="Getränke">', `<g id="Getränke" opacity="${opacity.toFixed(2)}">`);
   return svg;
 }
 
-// Extract inner content of an SVG string (strips xml declaration + outer <svg> tag)
 function innerSvg(svg: string): string {
   return svg.match(/<svg[^>]*>([\s\S]*)<\/svg>/)?.[1] ?? '';
 }
 
-// Rasterize an SVG string to a PNG data URL via canvas
+function buildCompositeSvg(drinkSvg: string, sizePx: number): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${sizePx}" height="${sizePx}" viewBox="0 0 410.2 405.2">
+    ${innerSvg(spritzBack)}
+    ${innerSvg(drinkSvg)}
+    ${innerSvg(spritzTop)}
+  </svg>`;
+}
+
 function svgToDataUrl(svgString: string, sizePx: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const blob = new Blob([svgString], { type: 'image/svg+xml' });
@@ -78,7 +81,6 @@ function svgToDataUrl(svgString: string, sizePx: number): Promise<string> {
   });
 }
 
-// Cache stores Promises so concurrent calls for the same key share one rasterization
 const dataUrlCache = new Map<string, Promise<string>>();
 
 function getDataUrl(key: string, svgString: string, sizePx: number): Promise<string> {
@@ -88,15 +90,26 @@ function getDataUrl(key: string, svgString: string, sizePx: number): Promise<str
   return dataUrlCache.get(key)!;
 }
 
-function buildCompositeSvg(drinkSvg: string, sizePx: number): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${sizePx}" height="${sizePx}" viewBox="0 0 410.2 405.2">
-    ${innerSvg(spritzBack)}
-    ${innerSvg(drinkSvg)}
-    ${innerSvg(spritzTop)}
-  </svg>`;
+// Returns a PNG data URL for use with MapLibre addImage()
+export async function getGlassIconDataUrl(colorHex: string, colorValue: number): Promise<string> {
+  const quantized = Math.round(colorValue / 5) * 5;
+  const key = `${colorHex}-${quantized}`;
+  const opacity = 0.15 + (colorValue / 255) * 0.85;
+  const drinkSvg = recolorDrinkSvg(colorHex, opacity);
+  return getDataUrl(key, buildCompositeSvg(drinkSvg, 48), 48);
 }
 
-// buildIconHtml stays synchronous — used only for popup previews (not performance-critical)
+export async function getEmptyGlassDataUrl(): Promise<string> {
+  const drinkSvg = recolorDrinkSvg('#cccccc', 0.3);
+  return getDataUrl('__empty__', buildCompositeSvg(drinkSvg, 48), 48);
+}
+
+export async function getNodataGlassDataUrl(): Promise<string> {
+  const svgWithSize = spritzNodata.replace('<svg ', '<svg width="48" height="48" ');
+  return getDataUrl('__nodata__', svgWithSize, 48);
+}
+
+// Synchronous HTML for popups (not performance-critical)
 export function buildIconHtml(colorHex: string, colorValue: number, sizePx: number): string {
   const opacity = 0.15 + (colorValue / 255) * 0.85;
   const drinkSvg = recolorDrinkSvg(colorHex, opacity);
@@ -105,33 +118,4 @@ export function buildIconHtml(colorHex: string, colorValue: number, sizePx: numb
   const drink = drinkSvg.replace('<svg ', `<svg ${size} `);
   const top = spritzTop.replace('<svg ', `<svg ${size} `);
   return `<div style="position:relative;width:${sizePx}px;height:${sizePx}px;">${back}${drink}${top}</div>`;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function createGlassIcon(L: any, colorHex: string, colorValue: number, priceTier: string) {
-  const quantized = Math.round(colorValue / 5) * 5;
-  const key = `${colorHex}-${quantized}`;
-
-  const opacity = 0.15 + (colorValue / 255) * 0.85;
-  const drinkSvg = recolorDrinkSvg(colorHex, opacity);
-  const dataUrl = await getDataUrl(key, buildCompositeSvg(drinkSvg, 48), 48);
-
-  const html = `<img src="${dataUrl}" width="48" height="48" style="display:block;" />${priceTier ? `<div class="spritz-label">${priceTier}</div>` : ''}`;
-  return L.divIcon({ html, className: 'spritz-marker', iconSize: [48, 60], iconAnchor: [24, 52], popupAnchor: [0, -54] });
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function createEmptyGlassIcon(L: any) {
-  const drinkSvg = recolorDrinkSvg('#cccccc', 0.3);
-  const dataUrl = await getDataUrl('__empty__', buildCompositeSvg(drinkSvg, 48), 48);
-  const html = `<img src="${dataUrl}" width="48" height="48" style="display:block;" />`;
-  return L.divIcon({ html, className: 'spritz-marker', iconSize: [48, 60], iconAnchor: [24, 52], popupAnchor: [0, -54] });
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function createNodataGlassIcon(L: any) {
-  const svgWithSize = spritzNodata.replace('<svg ', `<svg width="48" height="48" `);
-  const dataUrl = await getDataUrl('__nodata__', svgWithSize, 48);
-  const html = `<img src="${dataUrl}" width="48" height="48" style="display:block;" />`;
-  return L.divIcon({ html, className: 'spritz-marker', iconSize: [48, 60], iconAnchor: [24, 52], popupAnchor: [0, -54] });
 }

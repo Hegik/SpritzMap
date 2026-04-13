@@ -1,26 +1,18 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { selectedDrinkId, selectedPriceTier } from '$lib/stores/map';
-  import { createGlassIcon, createEmptyGlassIcon, createNodataGlassIcon, buildIconHtml } from '$lib/utils/markerIcon';
+  import { getGlassIconDataUrl, getEmptyGlassDataUrl, getNodataGlassDataUrl, buildIconHtml } from '$lib/utils/markerIcon';
   import PriceSubmitModal from '$lib/components/PriceSubmitModal.svelte';
   import { isLoggedIn } from '$lib/stores/auth';
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let leaflet: any;
+  import type { Map, Popup, GeoJSONSource } from 'maplibre-gl';
 
   let mapEl: HTMLDivElement;
+  let map: Map;
+  let popup: Popup;
 
   export function reloadMarkers() {
-    loadEmptyMarkers();
     loadMarkers($selectedDrinkId, $selectedPriceTier);
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let map: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let markerLayer: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let wmsLayer: any = null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let emptyLayer: any;
 
   let submitOpen = $state(false);
   let submitLocationId = $state<number | null>(null);
@@ -30,194 +22,258 @@
   const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
-  async function loadEmptyMarkers() {
-    if (!map) return;
-    emptyLayer.clearLayers();
+  // Image name registry — track which icon keys are already added to the map
+  const registeredImages = new Set<string>();
 
-    const res = await fetch(`${API_URL}/locations/geojson/empty`);
-    if (!res.ok) return;
-    const geojson: GeoJSON.FeatureCollection = await res.json();
-
-    const emptyIcon = await createEmptyGlassIcon(leaflet);
-    for (const feature of geojson.features) {
-      const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
-      const [lng, lat] = geometry.coordinates;
-
-      const marker = leaflet.marker([lat, lng], { icon: emptyIcon });
-      const locId = properties!.id;
-      const locName = properties!.name;
-      const emptyAddress = properties!.address?.trim().replace(/^,|,$/g, '').trim();
-      marker.bindPopup(`
-        <strong>${locName}</strong><br>
-        ${emptyAddress ? `<small>${emptyAddress}</small><br>` : ''}
-        <em style="color:#aaa;font-size:0.8rem">Noch kein Preis gemeldet</em>
-        ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden</button>' : ''}
-      `);
-      marker.on('popupopen', (e: any) => {
-        const btn = e.popup.getElement()?.querySelector('.popup-btn');
-        btn?.addEventListener('click', () => {
-          submitLocationId = locId;
-          submitLocationName = locName;
-          submitIsEmpty = true;
-          submitOpen = true;
-          map.closePopup();
-        });
-      });
-      emptyLayer.addLayer(marker);
-    }
+  async function ensureImage(key: string, dataUrl: string) {
+    if (registeredImages.has(key)) return;
+    await new Promise<void>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        if (!map.hasImage(key)) map.addImage(key, img);
+        registeredImages.add(key);
+        resolve();
+      };
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
   }
 
   async function loadMarkers(drinkId: number | null, priceTier: string | null) {
     if (!map) return;
-    markerLayer.clearLayers();
-
-    // When filtering by drink, suppress the standalone empty-glass layer —
-    // nodata icons (fetched below) replace it for all unpriced locations.
-    if (drinkId) {
-      emptyLayer.clearLayers();
-    }
 
     const params = new URLSearchParams();
     if (drinkId) params.set('drink_id', String(drinkId));
     if (priceTier) params.set('price_tier', priceTier);
 
-    // Fetch colored markers and (when drink is selected) nodata markers in parallel
-    const fetches: [Promise<Response>, Promise<Response> | null] = [
+    const [res, nodataRes, emptyRes] = await Promise.all([
       fetch(`${API_URL}/locations/geojson?${params}`),
       drinkId ? fetch(`${API_URL}/locations/geojson/nodata?drink_id=${drinkId}`) : null,
-    ];
-    const [res, nodataRes] = await Promise.all(fetches);
+      drinkId ? null : fetch(`${API_URL}/locations/geojson/empty`),
+    ]);
+
     if (!res.ok) return;
     const geojson: GeoJSON.FeatureCollection = await res.json();
 
-    // Nodata icons — locations with no price for the selected drink
-    if (nodataRes?.ok) {
-      const nodataGeojson: GeoJSON.FeatureCollection = await nodataRes.json();
-      const nodataIcon = await createNodataGlassIcon(leaflet);
-      for (const feature of nodataGeojson.features) {
-        const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
-        const [lng, lat] = geometry.coordinates;
-        const marker = leaflet.marker([lat, lng], { icon: nodataIcon });
-        const locName = properties!.name;
-        const address = properties!.address?.trim().replace(/^,|,$/g, '').trim();
-        marker.bindPopup(`
-          <strong>${locName}</strong><br>
-          ${address ? `<small>${address}</small><br>` : ''}
-          <em style="color:#aaa;font-size:0.8rem">Noch kein Preis für diesen Drink</em>
-          ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden</button>' : ''}
-        `);
-        marker.on('popupopen', (e: any) => {
-          const btn = e.popup.getElement()?.querySelector('.popup-btn');
-          btn?.addEventListener('click', () => {
-            submitLocationId = properties!.id;
-            submitLocationName = locName;
-            submitIsEmpty = true;
-            submitOpen = true;
-            map.closePopup();
-          });
-        });
-        markerLayer.addLayer(marker);
+    // Collect all unique icon keys needed and preload them in parallel
+    const iconJobs: Array<{ key: string; promise: Promise<string> }> = [];
+    const seenKeys = new Set<string>();
+
+    for (const f of geojson.features) {
+      const p = (f as GeoJSON.Feature<GeoJSON.Point>).properties!;
+      const quantized = Math.round(p.avg_color_value / 5) * 5;
+      const key = `glass-${p.drink_color_hex}-${quantized}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        iconJobs.push({ key, promise: getGlassIconDataUrl(p.drink_color_hex, p.avg_color_value) });
       }
     }
 
-    const coloredMarkers = await Promise.all(geojson.features.map(async (feature) => {
-      const { geometry, properties } = feature as GeoJSON.Feature<GeoJSON.Point>;
-      const [lng, lat] = geometry.coordinates;
-      const icon = await createGlassIcon(
-        leaflet,
-        properties!.drink_color_hex,
-        properties!.avg_color_value,
-        properties!.price_tier
-      );
+    if (nodataRes?.ok || !drinkId) {
+      if (!seenKeys.has('__nodata__')) {
+        seenKeys.add('__nodata__');
+        iconJobs.push({ key: '__nodata__', promise: getNodataGlassDataUrl() });
+      }
+    }
+    if (emptyRes || !drinkId) {
+      if (!seenKeys.has('__empty__')) {
+        seenKeys.add('__empty__');
+        iconJobs.push({ key: '__empty__', promise: getEmptyGlassDataUrl() });
+      }
+    }
 
-      const marker = leaflet.marker([lat, lng], { icon });
-      const locId = properties!.id;
-      const locName = properties!.name;
-      const address = properties!.address?.trim().replace(/^,|,$/g, '').trim();
-      const popupIconHtml = buildIconHtml(properties!.drink_color_hex, properties!.avg_color_value, 200);
-      marker.bindPopup(`
-        <strong>${locName}</strong><br>
-        <div style="display:flex;justify-content:center;margin:6px 0;">${popupIconHtml}</div>
-        ${address ? `<small>${address}</small><br>` : ''}
-        ${properties!.drink_name} — <b>${properties!.price.toFixed(2)} €</b><br>
-        ${$isLoggedIn ? '<br><button class="popup-btn">Preis melden / aktualisieren</button>' : ''}
-      `);
-      marker.on('popupopen', (e: any) => {
-        const btn = e.popup.getElement()?.querySelector('.popup-btn');
-        btn?.addEventListener('click', () => {
-          submitLocationId = locId;
-          submitLocationName = locName;
-          submitIsEmpty = false;
-          submitOpen = true;
-          map.closePopup();
-        });
+    // Resolve all data URLs then register images
+    const resolved = await Promise.all(iconJobs.map(async j => ({ key: j.key, url: await j.promise })));
+    await Promise.all(resolved.map(r => ensureImage(r.key, r.url)));
+
+    // Build GeoJSON features with icon key + popup data
+    const features: GeoJSON.Feature[] = [];
+
+    for (const f of geojson.features) {
+      const p = (f as GeoJSON.Feature<GeoJSON.Point>).properties!;
+      const quantized = Math.round(p.avg_color_value / 5) * 5;
+      features.push({
+        type: 'Feature',
+        geometry: (f as GeoJSON.Feature<GeoJSON.Point>).geometry,
+        properties: {
+          ...p,
+          icon: `glass-${p.drink_color_hex}-${quantized}`,
+          priceTier: p.price_tier,
+          popup_type: 'priced',
+        },
       });
-      return marker;
-    }));
-    coloredMarkers.forEach(m => markerLayer.addLayer(m));
+    }
+
+    if (nodataRes?.ok) {
+      const nodataGeojson: GeoJSON.FeatureCollection = await nodataRes.json();
+      for (const f of nodataGeojson.features) {
+        features.push({
+          type: 'Feature',
+          geometry: (f as GeoJSON.Feature<GeoJSON.Point>).geometry,
+          properties: {
+            ...(f as GeoJSON.Feature<GeoJSON.Point>).properties,
+            icon: '__nodata__',
+            popup_type: 'nodata',
+          },
+        });
+      }
+    }
+
+    if (emptyRes?.ok) {
+      const emptyGeojson: GeoJSON.FeatureCollection = await emptyRes.json();
+      for (const f of emptyGeojson.features) {
+        features.push({
+          type: 'Feature',
+          geometry: (f as GeoJSON.Feature<GeoJSON.Point>).geometry,
+          properties: {
+            ...(f as GeoJSON.Feature<GeoJSON.Point>).properties,
+            icon: '__empty__',
+            popup_type: 'empty',
+          },
+        });
+      }
+    }
+
+    const source = map.getSource('markers') as GeoJSONSource | undefined;
+    const fc: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features };
+    if (source) {
+      source.setData(fc);
+    } else {
+      map.addSource('markers', { type: 'geojson', data: fc });
+      map.addLayer({
+        id: 'markers-layer',
+        type: 'symbol',
+        source: 'markers',
+        layout: {
+          'icon-image': ['get', 'icon'],
+          'icon-size': 1,
+          'icon-allow-overlap': true,
+          'icon-anchor': 'bottom',
+          'text-field': ['get', 'priceTier'],
+          'text-size': 11,
+          'text-anchor': 'top',
+          'text-offset': [0, 0.1],
+          'text-allow-overlap': true,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': '#333333',
+          'text-halo-color': '#ffffff',
+          'text-halo-width': 1.5,
+        },
+      });
+    }
+  }
+
+  function updateWmsLayer(drinkId: number | null) {
+    const url = `${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:4326&STYLES=`;
+    const source = map.getSource('wms-lor') as GeoJSONSource | undefined;
+    if (source) {
+      (map.getSource('wms-lor') as any).tiles = [url + '&BBOX={bbox-epsg-3857}'];
+      map.triggerRepaint();
+    }
+  }
+
+  function showPopup(e: any) {
+    const feature = e.features?.[0];
+    if (!feature) return;
+    const props = feature.properties;
+    const coords = feature.geometry.coordinates.slice();
+    const address = props.address?.trim().replace(/^,|,$/g, '').trim();
+
+    let html = `<strong>${props.name}</strong><br>`;
+    if (address) html += `<small>${address}</small><br>`;
+
+    if (props.popup_type === 'priced') {
+      const popupIconHtml = buildIconHtml(props.drink_color_hex, props.avg_color_value, 200);
+      html += `<div style="display:flex;justify-content:center;margin:6px 0;">${popupIconHtml}</div>`;
+      html += `${props.drink_name} — <b>${Number(props.price).toFixed(2)} €</b><br>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">Preis melden / aktualisieren</button>`;
+    } else if (props.popup_type === 'nodata') {
+      html += `<em style="color:#aaa;font-size:0.8rem">Noch kein Preis für diesen Drink</em>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">Preis melden</button>`;
+    } else {
+      html += `<em style="color:#aaa;font-size:0.8rem">Noch kein Preis gemeldet</em>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">Preis melden</button>`;
+    }
+
+    popup.setLngLat(coords).setHTML(html).addTo(map);
+
+    // Wire up button after popup DOM is created
+    setTimeout(() => {
+      const btn = document.querySelector('.popup-btn') as HTMLButtonElement | null;
+      btn?.addEventListener('click', () => {
+        submitLocationId = Number(btn.dataset.id);
+        submitLocationName = btn.dataset.name ?? '';
+        submitIsEmpty = btn.dataset.empty === 'true';
+        submitOpen = true;
+        popup.remove();
+      });
+    }, 0);
   }
 
   onMount(async () => {
-    leaflet = await import('leaflet');
-    await import('leaflet/dist/leaflet.css');
+    const maplibre = await import('maplibre-gl');
+    await import('maplibre-gl/dist/maplibre-gl.css');
 
-    map = leaflet.map(mapEl, {
-      center: [52.52, 13.405], // Berlin
+    map = new maplibre.Map({
+      container: mapEl,
+      style: {
+        version: 8,
+        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+        sources: {
+          'basemap': {
+            type: 'raster',
+            tiles: [
+              'https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_grau/default/GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png'
+            ],
+            tileSize: 256,
+            attribution: '© GeoBasis-DE / BKG 2024',
+          },
+          'wms-lor': {
+            type: 'raster',
+            tiles: [
+              `${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${$selectedDrinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`,
+            ],
+            tileSize: 256,
+          },
+        },
+        layers: [
+          { id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-opacity': 0.5 } },
+          { id: 'wms-lor', type: 'raster', source: 'wms-lor', paint: { 'raster-opacity': 1 },
+            minzoom: 0, maxzoom: 17 },
+        ],
+      },
+      center: [13.405, 52.52],
       zoom: 12,
     });
 
-    leaflet.tileLayer.wms('https://sgx.geodatenzentrum.de/wms_basemapde', {
-      layers: 'de_basemapde_web_raster_grau',
-      format: 'image/png',
-      transparent: false,
-      version: '1.3.0',
-      attribution: '© GeoBasis-DE / BKG 2024',
-      maxZoom: 20,
-      opacity: 0.5,
-    }).addTo(map);
+    popup = new maplibre.Popup({ closeButton: true, maxWidth: '280px' });
 
-    markerLayer = leaflet.layerGroup();
-    emptyLayer = leaflet.layerGroup();
+    map.on('load', async () => {
+      await loadMarkers($selectedDrinkId, $selectedPriceTier);
 
-    function createWmsLayer(drinkId: number | null) {
-      return leaflet.tileLayer.wms(`${GEOSERVER_URL}/wms`, {
-        layers: 'spritzmap:lor_index',
-        format: 'image/png',
-        transparent: true,
-        opacity: 0.4,
-        attribution: 'SpritzMap LOR Layer',
-        viewparams: `drink_id:${drinkId ?? 1}`,
-      });
-    }
-
-    wmsLayer = createWmsLayer($selectedDrinkId);
-
-    function applyZoomLayers() {
-      const zoom = map.getZoom();
-      if (zoom < 17) {
-        if (!map.hasLayer(wmsLayer)) wmsLayer.addTo(map);
-        if (map.hasLayer(markerLayer)) map.removeLayer(markerLayer);
-        if (map.hasLayer(emptyLayer)) map.removeLayer(emptyLayer);
-      } else {
-        if (map.hasLayer(wmsLayer)) map.removeLayer(wmsLayer);
-        if (!map.hasLayer(markerLayer)) markerLayer.addTo(map);
-        if (!map.hasLayer(emptyLayer)) emptyLayer.addTo(map);
-      }
-    }
-
-    map.on('zoomend', applyZoomLayers);
-    applyZoomLayers();
-
-    await loadEmptyMarkers();
-    await loadMarkers(null, null);
+      map.on('click', 'markers-layer', showPopup);
+      map.on('mouseenter', 'markers-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'markers-layer', () => { map.getCanvas().style.cursor = ''; });
+    });
 
     const unsubDrink = selectedDrinkId.subscribe((drinkId) => {
+      if (!map?.loaded()) return;
       loadMarkers(drinkId, $selectedPriceTier);
-      if (map.hasLayer(wmsLayer)) map.removeLayer(wmsLayer);
-      wmsLayer = createWmsLayer(drinkId);
-      if (map.getZoom() < 16) wmsLayer.addTo(map);
+      // Update WMS source URL
+      const src = map.getSource('wms-lor') as any;
+      if (src) {
+        src.tiles = [`${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`];
+        map.style.sourceCaches['wms-lor']?.clearTiles();
+        map.triggerRepaint();
+      }
     });
-    const unsubTier = selectedPriceTier.subscribe((tier) => loadMarkers($selectedDrinkId, tier));
+
+    const unsubTier = selectedPriceTier.subscribe((tier) => {
+      if (!map?.loaded()) return;
+      loadMarkers($selectedDrinkId, tier);
+    });
 
     return () => {
       unsubDrink();
@@ -235,7 +291,12 @@
 <button
   class="locate-btn"
   title="Mein Standort"
-  onclick={() => map?.locate({ setView: true, maxZoom: 17 })}
+  onclick={() => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 17 }),
+      () => {}
+    );
+  }}
 >
   ◎
 </button>
@@ -245,20 +306,19 @@
   locationId={submitLocationId}
   locationName={submitLocationName}
   isEmptyLocation={submitIsEmpty}
-  onsubmitted={() => { loadEmptyMarkers(); loadMarkers($selectedDrinkId, $selectedPriceTier); }}
+  onsubmitted={() => loadMarkers($selectedDrinkId, $selectedPriceTier)}
 />
 
 <style>
   .map-container {
     width: 100%;
     height: 100%;
-    z-index: 0;
   }
 
   .locate-btn {
     position: absolute;
     bottom: 1.5rem;
-    right: 0.65rem;
+    left: 0.65rem;
     z-index: 5;
     width: 34px;
     height: 34px;
@@ -275,17 +335,7 @@
     padding: 0;
   }
 
-  .locate-btn:hover {
-    background: #f4f4f4;
-  }
-
-  :global(.spritz-marker) {
-    background: none;
-    border: none;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
+  .locate-btn:hover { background: #f4f4f4; }
 
   :global(.popup-btn) {
     margin-top: 6px;
@@ -300,14 +350,10 @@
     width: 100%;
   }
 
-  :global(.spritz-label) {
-    font-size: 11px;
-    font-weight: 700;
-    color: #333;
-    text-shadow: 0 1px 2px white;
-    margin-top: 2px;
-    text-align: center;
-    letter-spacing: 0;
-    width: 48px;
+  :global(.maplibregl-popup-content) {
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: system-ui, sans-serif;
+    font-size: 0.875rem;
   }
 </style>

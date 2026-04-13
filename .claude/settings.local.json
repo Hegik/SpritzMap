@@ -8,7 +8,9 @@
       "Bash(npm run:*)",
       "WebFetch(domain:geoserver.hegik.de)",
       "Bash(curl -i -L \"https://geoserver.hegik.de/geoserver/spritzmap/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_price_summary&viewparams=drink_id:1&SRS=EPSG:4326&WIDTH=512&HEIGHT=512&BBOX=13.0,52.3,13.8,52.7\")",
-      "Bash(curl -s \"https://geoserver.hegik.de/geoserver/spritzmap/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=spritzmap:lor_price_summary&maxFeatures=600&viewparams=drink_id:1\")"
+      "Bash(curl -s \"https://geoserver.hegik.de/geoserver/spritzmap/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=spritzmap:lor_price_summary&maxFeatures=600&viewparams=drink_id:1\")",
+      "Bash(npm uninstall:*)",
+      "WebFetch(domain:sgx.geodatenzentrum.de)"
     ]
   }
 }

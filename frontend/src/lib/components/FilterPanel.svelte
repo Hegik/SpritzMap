@@ -64,7 +64,7 @@
   @media (min-width: 641px) {
     .filter-panel {
       top: 1rem;
-      left: 1rem;
+      right: 1rem;
       min-width: 170px;
     }
 

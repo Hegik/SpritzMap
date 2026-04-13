@@ -22,7 +22,6 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-node": "^5.5.4",
-		"@types/leaflet": "^1.9.21",
-		"leaflet": "^1.9.4"
+		"maplibre-gl": "^5.23.0"
 	}
 }

@@ -100,7 +100,7 @@
       class="modal"
       onclick={(e) => e.stopPropagation()}
       onkeydown={(e) => e.stopPropagation()}
-      role="document"
+      role="presentation"
     >
       <h2>Preis melden</h2>
       <p class="location-name">{locationName}</p>
