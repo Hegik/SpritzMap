@@ -156,6 +156,43 @@ async def get_nodata_locations_geojson(
     return {"type": "FeatureCollection", "features": features}
 
 
+@router.get("/{location_id}/prices")
+async def get_location_prices(
+    location_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Returns all current prices for a location across all drink types."""
+    latest_sq = (
+        select(
+            PriceEntry.drink_id,
+            func.max(PriceEntry.reported_at).label("max_reported_at"),
+        )
+        .where(PriceEntry.location_id == location_id)
+        .where(PriceEntry.is_current == True)
+        .where(PriceEntry.unavailable == False)
+        .group_by(PriceEntry.drink_id)
+        .subquery()
+    )
+
+    query = (
+        select(Drink.id, Drink.name, PriceEntry.price)
+        .join(
+            latest_sq,
+            (PriceEntry.drink_id == latest_sq.c.drink_id)
+            & (PriceEntry.reported_at == latest_sq.c.max_reported_at),
+        )
+        .join(Drink, PriceEntry.drink_id == Drink.id)
+        .where(PriceEntry.location_id == location_id)
+        .order_by(Drink.name)
+    )
+
+    results = await db.execute(query)
+    return [
+        {"drink_id": row.id, "drink_name": row.name, "price": float(row.price)}
+        for row in results.all()
+    ]
+
+
 @router.post("/{location_id}/no-spritz")
 async def mark_no_spritz(
     location_id: int,

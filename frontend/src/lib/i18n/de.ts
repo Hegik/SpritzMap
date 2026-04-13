@@ -57,6 +57,7 @@ const de = {
     locate: 'Mein Standort',
     popup_no_price_for_drink: 'Dieser Spritz wurde noch nicht erfasst',
     popup_no_price: 'Noch kein Preis erfasst',
+    popup_other_drinks: 'Weitere Sorten',
     btn_add_spritz: 'Spritz hinzufügen',
   },
 

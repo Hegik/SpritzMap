@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { selectedDrinkId, selectedPriceTier } from '$lib/stores/map';
+  import { drinks, selectedDrinkId, selectedPriceTier } from '$lib/stores/map';
   import { getGlassIconDataUrl, getEmptyGlassDataUrl, getNodataGlassDataUrl, buildIconHtml } from '$lib/utils/markerIcon';
   import PriceSubmitModal from '$lib/components/PriceSubmitModal.svelte';
   import { isLoggedIn } from '$lib/stores/auth';
@@ -22,6 +22,16 @@
 
   const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+
+  function getDrinkColor(drinkId: number | null): string {
+    if (!drinkId) return '#e8500a';
+    return $drinks.find((d) => d.id === drinkId)?.color_hex ?? '#e8500a';
+  }
+
+  function updateBasemapTint(drinkId: number | null) {
+    if (!map?.getLayer('drink-tint')) return;
+    map.setPaintProperty('drink-tint', 'background-color', getDrinkColor(drinkId));
+  }
 
   // Image name registry — track which icon keys are already added to the map
   const registeredImages = new Set<string>();
@@ -193,12 +203,31 @@
     }
   }
 
-  function showPopup(e: any) {
+  function buildOtherDrinksHtml(
+    allPrices: { drink_id: number; drink_name: string; price: number }[],
+    excludeDrinkId: number | null,
+  ): string {
+    const others = allPrices.filter((p) => p.drink_id !== excludeDrinkId);
+    if (!others.length) return '';
+    let html = `<div class="popup-other-drinks"><span>${$t.map.popup_other_drinks}</span><ul>`;
+    for (const p of others) {
+      html += `<li>${p.drink_name} — <b>${p.price.toFixed(2)} €</b></li>`;
+    }
+    html += `</ul></div>`;
+    return html;
+  }
+
+  async function showPopup(e: any) {
     const feature = e.features?.[0];
     if (!feature) return;
     const props = feature.properties;
     const coords = feature.geometry.coordinates.slice();
     const address = props.address?.trim().replace(/^,|,$/g, '').trim();
+
+    // Fetch all prices for this location in parallel with popup render prep
+    const pricesRes = await fetch(`${API_URL}/locations/${props.id}/prices`).catch(() => null);
+    const allPrices: { drink_id: number; drink_name: string; price: number }[] =
+      pricesRes?.ok ? await pricesRes.json() : [];
 
     let html = `<strong>${props.name}</strong><br>`;
     if (address) html += `<small>${address}</small><br>`;
@@ -206,13 +235,16 @@
     if (props.popup_type === 'priced') {
       const popupIconHtml = buildIconHtml(props.drink_color_hex, props.avg_color_value, 200);
       html += `<div style="display:flex;justify-content:center;margin:6px 0;">${popupIconHtml}</div>`;
-      html += `${props.drink_name} — <b>${Number(props.price).toFixed(2)} €</b><br>`;
+      html += `${props.drink_name} — <b>${Number(props.price).toFixed(2)} €</b>`;
+      html += buildOtherDrinksHtml(allPrices, props.drink_id);
       if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">${$t.map.btn_add_spritz}</button>`;
     } else if (props.popup_type === 'nodata') {
       html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price_for_drink}</em>`;
+      html += buildOtherDrinksHtml(allPrices, null);
       if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">${$t.map.btn_add_spritz}</button>`;
     } else {
       html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price}</em>`;
+      html += buildOtherDrinksHtml(allPrices, null);
       if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">${$t.map.btn_add_spritz}</button>`;
     }
 
@@ -279,6 +311,20 @@
         map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
       }
 
+      // Drink-color tint overlay — appears at zoom ≥ 15 when LOR layer hides
+      map.addLayer(
+        {
+          id: 'drink-tint',
+          type: 'background',
+          minzoom: 15,
+          paint: {
+            'background-color': getDrinkColor($selectedDrinkId),
+            'background-opacity': 0.12,
+          },
+        },
+        'wms-lor', // insert just below the WMS layer (behind markers)
+      );
+
       // Initial load
       await loadMarkers($selectedDrinkId, $selectedPriceTier);
 
@@ -295,6 +341,7 @@
         if (firstDrink) { firstDrink = false; return; }
         loadMarkers(drinkId, $selectedPriceTier);
         updateWms(drinkId);
+        updateBasemapTint(drinkId);
       });
 
       let firstTier = true;
@@ -383,6 +430,33 @@
     font-weight: 600;
     cursor: pointer;
     width: 100%;
+  }
+
+  :global(.popup-other-drinks) {
+    margin-top: 8px;
+    border-top: 1px solid #eee;
+    padding-top: 6px;
+  }
+
+  :global(.popup-other-drinks span) {
+    font-size: 0.75rem;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  :global(.popup-other-drinks ul) {
+    margin: 4px 0 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  :global(.popup-other-drinks li) {
+    font-size: 0.8rem;
+    color: #555;
   }
 
   :global(.maplibregl-popup-content) {
