@@ -141,28 +141,45 @@
       source.setData(fc);
     } else {
       map.addSource('markers', { type: 'geojson', data: fc });
+
+      const sharedLayout = {
+        'icon-image': ['get', 'icon'] as any,
+        'icon-size': 1,
+        'icon-allow-overlap': true,
+        'icon-anchor': 'bottom' as const,
+        'text-field': ['get', 'priceTier'] as any,
+        'text-size': 11,
+        'text-anchor': 'top' as const,
+        'text-offset': [0, 0.1] as any,
+        'text-allow-overlap': true,
+        'text-optional': true,
+      };
+      const sharedPaint = {
+        'text-color': '#333333',
+        'text-halo-color': '#ffffff',
+        'text-halo-width': 1.5,
+      };
+
+      // Priced locations — visible one zoom level earlier
       map.addLayer({
-        id: 'markers-layer',
+        id: 'markers-priced',
+        type: 'symbol',
+        source: 'markers',
+        minzoom: 13,
+        filter: ['==', ['get', 'popup_type'], 'priced'],
+        layout: sharedLayout,
+        paint: sharedPaint,
+      });
+
+      // Nodata / empty locations — visible at same level as before
+      map.addLayer({
+        id: 'markers-nodata',
         type: 'symbol',
         source: 'markers',
         minzoom: 15,
-        layout: {
-          'icon-image': ['get', 'icon'],
-          'icon-size': 1,
-          'icon-allow-overlap': true,
-          'icon-anchor': 'bottom',
-          'text-field': ['get', 'priceTier'],
-          'text-size': 11,
-          'text-anchor': 'top',
-          'text-offset': [0, 0.1],
-          'text-allow-overlap': true,
-          'text-optional': true,
-        },
-        paint: {
-          'text-color': '#333333',
-          'text-halo-color': '#ffffff',
-          'text-halo-width': 1.5,
-        },
+        filter: ['in', ['get', 'popup_type'], ['literal', ['nodata', 'empty']]],
+        layout: sharedLayout,
+        paint: sharedPaint,
       });
     }
   }
@@ -256,9 +273,11 @@
     let unsubTier: () => void;
 
     map.on('load', async () => {
-      map.on('click', 'markers-layer', showPopup);
-      map.on('mouseenter', 'markers-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
-      map.on('mouseleave', 'markers-layer', () => { map.getCanvas().style.cursor = ''; });
+      for (const layer of ['markers-priced', 'markers-nodata']) {
+        map.on('click', layer, showPopup);
+        map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = ''; });
+      }
 
       // Initial load
       await loadMarkers($selectedDrinkId, $selectedPriceTier);

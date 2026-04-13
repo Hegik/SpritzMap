@@ -139,9 +139,9 @@
           <label>
             {$t.submit.label_intensity} ({colorValue})
             <div class="color-slider-wrapper">
-              <span style="opacity: 0.2">●</span>
+              <span style="opacity: 0.2; color: {selectedDrinkColor}">●</span>
               <input type="range" bind:value={colorValue} min={0} max={255} />
-              <span>●</span>
+              <span style="color: {selectedDrinkColor}">●</span>
             </div>
           </label>
 
@@ -221,7 +221,6 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    color: #e8500a;
     font-size: 1.2rem;
   }
 
