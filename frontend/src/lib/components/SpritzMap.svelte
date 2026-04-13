@@ -144,6 +144,7 @@
         id: 'markers-layer',
         type: 'symbol',
         source: 'markers',
+        minzoom: 16,
         layout: {
           'icon-image': ['get', 'icon'],
           'icon-size': 1,
@@ -241,7 +242,7 @@
         layers: [
           { id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-opacity': 0.5 } },
           { id: 'wms-lor', type: 'raster', source: 'wms-lor', paint: { 'raster-opacity': 1 },
-            minzoom: 0, maxzoom: 17 },
+            minzoom: 0, maxzoom: 16 },
         ],
       },
       center: [13.405, 52.52],
@@ -250,34 +251,40 @@
 
     popup = new maplibre.Popup({ closeButton: true, maxWidth: '280px' });
 
-    map.on('load', async () => {
-      await loadMarkers($selectedDrinkId, $selectedPriceTier);
+    let unsubDrink: () => void;
+    let unsubTier: () => void;
 
+    map.on('load', async () => {
       map.on('click', 'markers-layer', showPopup);
       map.on('mouseenter', 'markers-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', 'markers-layer', () => { map.getCanvas().style.cursor = ''; });
-    });
 
-    const unsubDrink = selectedDrinkId.subscribe((drinkId) => {
-      if (!map?.loaded()) return;
-      loadMarkers(drinkId, $selectedPriceTier);
-      // Update WMS source URL
-      const src = map.getSource('wms-lor') as any;
-      if (src) {
-        src.tiles = [`${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`];
-        map.style.sourceCaches['wms-lor']?.clearTiles();
-        map.triggerRepaint();
-      }
-    });
+      // Initial load
+      await loadMarkers($selectedDrinkId, $selectedPriceTier);
 
-    const unsubTier = selectedPriceTier.subscribe((tier) => {
-      if (!map?.loaded()) return;
-      loadMarkers($selectedDrinkId, tier);
+      // Subscribe after map is ready — first call fires immediately with current value
+      let firstDrink = true;
+      unsubDrink = selectedDrinkId.subscribe((drinkId) => {
+        if (firstDrink) { firstDrink = false; return; } // skip initial fire, already loaded above
+        loadMarkers(drinkId, $selectedPriceTier);
+        const src = map.getSource('wms-lor') as any;
+        if (src) {
+          src.tiles = [`${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`];
+          map.style.sourceCaches['wms-lor']?.clearTiles();
+          map.triggerRepaint();
+        }
+      });
+
+      let firstTier = true;
+      unsubTier = selectedPriceTier.subscribe((tier) => {
+        if (firstTier) { firstTier = false; return; }
+        loadMarkers($selectedDrinkId, tier);
+      });
     });
 
     return () => {
-      unsubDrink();
-      unsubTier();
+      unsubDrink?.();
+      unsubTier?.();
     };
   });
 
