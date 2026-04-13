@@ -1,5 +1,6 @@
 <script lang="ts">
   import { drinks, selectedDrinkId, selectedPriceTier } from '$lib/stores/map';
+  import { t } from '$lib/i18n';
 
   const priceTiers = ['€', '€€', '€€€'];
   let collapsed = $state(false);
@@ -14,14 +15,14 @@
 </script>
 
 <aside class="filter-panel" class:collapsed>
-  <button class="toggle" onclick={() => (collapsed = !collapsed)} aria-label="Filter ein-/ausblenden">
+  <button class="toggle" onclick={() => (collapsed = !collapsed)} aria-label={$t.filter.toggle_aria}>
     <span class="toggle-icon">{collapsed ? '▲' : '▼'}</span>
-    <span class="toggle-label">Filter</span>
+    <span class="toggle-label">{$t.filter.label}</span>
   </button>
 
   <div class="content">
     <section>
-      <h3>Getränk</h3>
+      <h3>{$t.filter.drink}</h3>
       {#each $drinks as drink}
         <button
           class:active={$selectedDrinkId === drink.id}
@@ -35,7 +36,7 @@
     </section>
 
     <section>
-      <h3>Preis</h3>
+      <h3>{$t.filter.price}</h3>
       <div class="tier-row">
         {#each priceTiers as tier}
           <button

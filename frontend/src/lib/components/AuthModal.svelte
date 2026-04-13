@@ -1,6 +1,7 @@
 <script lang="ts">
   import { authStore } from '$lib/stores/auth';
   import { api } from '$lib/api/client';
+  import { t } from '$lib/i18n';
 
   let {
     open = $bindable(false),
@@ -29,13 +30,13 @@
       } else if (mode === 'register') {
         await api.post('/auth/register', { email, username, password });
         mode = 'login';
-        info = 'Registrierung erfolgreich — bitte bestätige deine E-Mail.';
+        info = $t.auth.info_registered;
       } else {
         await api.post('/auth/forgot-password', { email });
-        info = 'Falls die E-Mail existiert, wurde ein Link gesendet.';
+        info = $t.auth.info_reset_sent;
       }
     } catch (e: unknown) {
-      error = e instanceof Error ? e.message : 'Fehler';
+      error = e instanceof Error ? e.message : $t.auth.error_generic;
     } finally {
       loading = false;
     }
@@ -57,24 +58,24 @@
       onkeydown={(e) => e.stopPropagation()}
       role="presentation"
     >
-      <h2>{mode === 'login' ? 'Einloggen' : mode === 'register' ? 'Registrieren' : 'Passwort vergessen'}</h2>
+      <h2>{mode === 'login' ? $t.auth.heading_login : mode === 'register' ? $t.auth.heading_register : $t.auth.heading_forgot}</h2>
 
       <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
         <label>
-          E-Mail
+          {$t.auth.label_email}
           <input type="email" bind:value={email} required autocomplete="email" />
         </label>
 
         {#if mode === 'register'}
           <label>
-            Nutzername
+            {$t.auth.label_username}
             <input type="text" bind:value={username} required minlength={3} maxlength={50} />
           </label>
         {/if}
 
         {#if mode !== 'forgot'}
           <label>
-            Passwort
+            {$t.auth.label_password}
             <input
               type="password"
               bind:value={password}
@@ -93,16 +94,16 @@
         {/if}
 
         <button type="submit" disabled={loading}>
-          {loading ? 'Lädt…' : mode === 'login' ? 'Einloggen' : mode === 'register' ? 'Registrieren' : 'Link senden'}
+          {loading ? $t.auth.btn_loading : mode === 'login' ? $t.auth.btn_login : mode === 'register' ? $t.auth.btn_register : $t.auth.btn_send_link}
         </button>
       </form>
 
       <button class="switch" onclick={() => { mode = mode === 'login' ? 'register' : 'login'; error = ''; info = ''; }}>
-        {mode === 'login' ? 'Noch kein Konto? Registrieren' : mode === 'register' ? 'Schon ein Konto? Einloggen' : 'Zurück zum Login'}
+        {mode === 'login' ? $t.auth.switch_to_register : mode === 'register' ? $t.auth.switch_to_login : $t.auth.back_to_login}
       </button>
       {#if mode === 'login'}
         <button class="switch" onclick={() => { mode = 'forgot'; error = ''; }}>
-          Passwort vergessen?
+          {$t.auth.forgot_password}
         </button>
       {/if}
     </div>

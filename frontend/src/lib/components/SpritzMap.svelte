@@ -4,6 +4,7 @@
   import { getGlassIconDataUrl, getEmptyGlassDataUrl, getNodataGlassDataUrl, buildIconHtml } from '$lib/utils/markerIcon';
   import PriceSubmitModal from '$lib/components/PriceSubmitModal.svelte';
   import { isLoggedIn } from '$lib/stores/auth';
+  import { t } from '$lib/i18n';
   import type { Map, Popup, GeoJSONSource } from 'maplibre-gl';
 
   let mapEl: HTMLDivElement;
@@ -189,13 +190,13 @@
       const popupIconHtml = buildIconHtml(props.drink_color_hex, props.avg_color_value, 200);
       html += `<div style="display:flex;justify-content:center;margin:6px 0;">${popupIconHtml}</div>`;
       html += `${props.drink_name} — <b>${Number(props.price).toFixed(2)} €</b><br>`;
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">Spritz hinzufügen</button>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">${$t.map.btn_add_spritz}</button>`;
     } else if (props.popup_type === 'nodata') {
-      html += `<em style="color:#aaa;font-size:0.8rem">Noch kein Preis für diesen Drink</em>`;
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">Spritz hinzufügen</button>`;
+      html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price_for_drink}</em>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">${$t.map.btn_add_spritz}</button>`;
     } else {
-      html += `<em style="color:#aaa;font-size:0.8rem">Noch kein Preis gemeldet</em>`;
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">Spritz hinzufügen</button>`;
+      html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price}</em>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">${$t.map.btn_add_spritz}</button>`;
     }
 
     popup.setLngLat(coords).setHTML(html).addTo(map);
@@ -299,7 +300,7 @@
 
 <button
   class="locate-btn"
-  title="Mein Standort"
+  title={$t.map.locate}
   onclick={() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 17 }),

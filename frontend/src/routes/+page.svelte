@@ -6,6 +6,7 @@
   import { authStore, isLoggedIn, user } from '$lib/stores/auth';
   import { drinks, selectedDrinkId } from '$lib/stores/map';
   import { api } from '$lib/api/client';
+  import { t } from '$lib/i18n';
 
   let authOpen = $state(false);
   let spritzMap: ReturnType<typeof SpritzMap>;
@@ -40,9 +41,9 @@
     <nav>
       {#if $isLoggedIn}
         <span class="username">{$user?.username}</span>
-        <button onclick={() => authStore.logout()}>Abmelden</button>
+        <button onclick={() => authStore.logout()}>{$t.nav.logout}</button>
       {:else}
-        <button class="cta" onclick={() => (authOpen = true)}>Anmelden</button>
+        <button class="cta" onclick={() => (authOpen = true)}>{$t.nav.login}</button>
       {/if}
     </nav>
   </header>

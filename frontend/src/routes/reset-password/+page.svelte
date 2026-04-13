@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { t } from '$lib/i18n';
 
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -9,8 +10,8 @@
   let error = $state('');
 
   async function submit() {
-    if (password !== password2) { error = 'Passwörter stimmen nicht überein'; return; }
-    if (password.length < 8) { error = 'Mindestens 8 Zeichen'; return; }
+    if (password !== password2) { error = $t.reset.error_mismatch; return; }
+    if (password.length < 8) { error = $t.reset.error_too_short; return; }
 
     error = '';
     status = 'loading';
@@ -24,11 +25,11 @@
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail ?? 'Fehler');
+        throw new Error(data.detail ?? $t.reset.error_generic);
       }
       status = 'success';
     } catch (e: unknown) {
-      error = e instanceof Error ? e.message : 'Fehler';
+      error = e instanceof Error ? e.message : $t.reset.error_generic;
       status = 'error';
     }
   }
@@ -36,26 +37,26 @@
 
 <div class="wrap">
   {#if status === 'success'}
-    <h1>Passwort geändert</h1>
-    <p>Du kannst dich jetzt mit deinem neuen Passwort einloggen.</p>
-    <a href="/">Zur Karte</a>
+    <h1>{$t.reset.success_heading}</h1>
+    <p>{$t.reset.success_body}</p>
+    <a href="/">{$t.reset.to_map}</a>
   {:else}
     <div class="card">
-      <h1>Neues Passwort</h1>
+      <h1>{$t.reset.label_new_password}</h1>
       <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
         <label>
-          Neues Passwort
+          {$t.reset.label_new_password}
           <input type="password" bind:value={password} required minlength={8}
                  autocomplete="new-password" />
         </label>
         <label>
-          Wiederholen
+          {$t.reset.label_repeat}
           <input type="password" bind:value={password2} required minlength={8}
                  autocomplete="new-password" />
         </label>
         {#if error}<p class="error">{error}</p>{/if}
         <button type="submit" disabled={status === 'loading'}>
-          {status === 'loading' ? 'Wird gespeichert…' : 'Passwort ändern'}
+          {status === 'loading' ? $t.reset.btn_loading : $t.reset.btn_submit}
         </button>
       </form>
     </div>

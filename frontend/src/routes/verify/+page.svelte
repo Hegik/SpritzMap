@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { t } from '$lib/i18n';
 
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -21,15 +22,15 @@
 
 <div class="wrap">
   {#if status === 'loading'}
-    <p>Wird überprüft…</p>
+    <p>{$t.verify.loading}</p>
   {:else if status === 'success'}
-    <h1>✓ E-Mail bestätigt</h1>
-    <p>Dein Konto ist jetzt aktiv. Du kannst dich einloggen.</p>
-    <a href="/">Zur Karte</a>
+    <h1>{$t.verify.success_heading}</h1>
+    <p>{$t.verify.success_body}</p>
+    <a href="/">{$t.verify.to_map}</a>
   {:else}
-    <h1>Ungültiger Link</h1>
-    <p>Der Link ist abgelaufen oder wurde bereits verwendet.</p>
-    <a href="/">Zur Karte</a>
+    <h1>{$t.verify.error_heading}</h1>
+    <p>{$t.verify.error_body}</p>
+    <a href="/">{$t.verify.to_map}</a>
   {/if}
 </div>
 

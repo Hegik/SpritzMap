@@ -2,6 +2,7 @@
   import { drinks, selectedDrinkId } from '$lib/stores/map';
   import { api } from '$lib/api/client';
   import { buildIconHtml } from '$lib/utils/markerIcon';
+  import { t } from '$lib/i18n';
 
   let {
     open = $bindable(false),
@@ -34,7 +35,7 @@
       onsubmitted();
       setTimeout(() => { open = false; success = false; }, 1500);
     } catch (e: unknown) {
-      error = e instanceof Error ? e.message : 'Fehler';
+      error = e instanceof Error ? e.message : $t.submit.error_generic;
     } finally {
       loading = false;
     }
@@ -49,7 +50,7 @@
       onsubmitted();
       setTimeout(() => { open = false; success = false; }, 1500);
     } catch (e: unknown) {
-      error = e instanceof Error ? e.message : 'Fehler';
+      error = e instanceof Error ? e.message : $t.submit.error_generic;
     } finally {
       loading = false;
     }
@@ -80,7 +81,7 @@
       onsubmitted();
       setTimeout(() => { open = false; success = false; }, 1500);
     } catch (e: unknown) {
-      error = e instanceof Error ? e.message : 'Fehler beim Speichern';
+      error = e instanceof Error ? e.message : $t.submit.error_save;
     } finally {
       loading = false;
     }
@@ -102,15 +103,15 @@
       onkeydown={(e) => e.stopPropagation()}
       role="presentation"
     >
-      <h2>Spritz hinzufügen</h2>
+      <h2>{$t.submit.heading}</h2>
       <p class="location-name">{locationName}</p>
 
       {#if success}
-        <p class="success">Gespeichert!</p>
+        <p class="success">{$t.submit.success}</p>
       {:else}
         <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
           <label>
-            Getränk
+            {$t.submit.label_drink}
             <select bind:value={drinkId}>
               {#each $drinks as drink}
                 <option value={drink.id}>{drink.name}</option>
@@ -119,7 +120,7 @@
           </label>
 
           <label>
-            Preis (€)
+            {$t.submit.label_price}
             <input
               type="number"
               bind:value={price}
@@ -127,7 +128,7 @@
               min="0.50"
               max="50"
               required
-              placeholder="z.B. 7.50"
+              placeholder={$t.submit.placeholder_price}
             />
           </label>
 
@@ -136,7 +137,7 @@
           </div>
 
           <label>
-            Farb-Intensität ({colorValue})
+            {$t.submit.label_intensity} ({colorValue})
             <div class="color-slider-wrapper">
               <span style="opacity: 0.2">●</span>
               <input type="range" bind:value={colorValue} min={0} max={255} />
@@ -145,8 +146,8 @@
           </label>
 
           <label>
-            Notiz (optional)
-            <input type="text" bind:value={note} maxlength={500} placeholder="z.B. nur am Wochenende" />
+            {$t.submit.label_note}
+            <input type="text" bind:value={note} maxlength={500} placeholder={$t.submit.placeholder_note} />
           </label>
 
           {#if error}
@@ -154,19 +155,19 @@
           {/if}
 
           <button type="submit" disabled={loading}>
-            {loading ? 'Speichern…' : 'Spritz hinzufügen'}
+            {loading ? $t.submit.btn_loading : $t.submit.btn_submit}
           </button>
         </form>
 
         <div class="divider"></div>
 
         <button class="btn-unavailable" disabled={loading} onclick={markUnavailable}>
-          Diese Sorte gibt es hier nicht
+          {$t.submit.btn_unavailable}
         </button>
 
         {#if isEmptyLocation}
           <button class="btn-no-spritz" disabled={loading} onclick={markNoSpritz}>
-            Hier gibt es generell keinen Spritz
+            {$t.submit.btn_no_spritz}
           </button>
         {/if}
       {/if}
