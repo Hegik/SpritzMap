@@ -3,8 +3,8 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --ignore-scripts
 COPY . .
-RUN node --max-old-space-size=1024 node_modules/.bin/svelte-kit sync && \
-    node --max-old-space-size=1024 node_modules/.bin/vite build
+RUN node --max-old-space-size=2048 node_modules/.bin/svelte-kit sync && \
+    node --max-old-space-size=2048 node_modules/.bin/vite build
 
 FROM node:20-alpine
 WORKDIR /app
