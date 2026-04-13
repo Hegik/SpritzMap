@@ -1,6 +1,7 @@
 <script lang="ts">
   import { drinks } from '$lib/stores/map';
   import { api } from '$lib/api/client';
+  import { buildIconHtml } from '$lib/utils/markerIcon';
 
   let {
     open = $bindable(false),
@@ -57,6 +58,12 @@
   $effect(() => {
     if ($drinks.length && !drinkId) drinkId = $drinks[0]?.id ?? 0;
   });
+
+  const selectedDrinkColor = $derived(
+    $drinks.find((d) => d.id === drinkId)?.color_hex ?? '#ff6e00'
+  );
+
+  const previewHtml = $derived(buildIconHtml(selectedDrinkColor, colorValue, 120));
 
   async function submit() {
     error = '';
@@ -123,6 +130,10 @@
               placeholder="z.B. 7.50"
             />
           </label>
+
+          <div class="preview-wrapper">
+            {@html previewHtml}
+          </div>
 
           <label>
             Farb-Intensität ({colorValue})
@@ -197,6 +208,13 @@
   }
 
   input:focus, select:focus { outline: none; border-color: #555; }
+
+  .preview-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 8px 0 4px;
+  }
 
   .color-slider-wrapper {
     display: flex;
