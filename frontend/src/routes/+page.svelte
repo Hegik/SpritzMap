@@ -72,7 +72,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 0 1.25rem;
-    height: 32px;
+    height: 48px;
     background: #e8500a;
     z-index: 10;
   }
@@ -80,7 +80,7 @@
   .logo { display: flex; align-items: center; }
 
   .logo-img {
-    height: 32px;
+    height: 48px;
     width: auto;
     display: block;
   }
