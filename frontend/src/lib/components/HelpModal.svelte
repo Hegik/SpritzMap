@@ -76,6 +76,25 @@
     overflow-y: auto;
     padding: 2rem 2rem 3rem;
     box-shadow: 0 0 40px rgba(0, 0, 0, 0.3);
+    scrollbar-color: rgba(255, 255, 255, 0.5) transparent;
+    scrollbar-width: thin;
+  }
+
+  .modal::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .modal::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .modal::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 3px;
+  }
+
+  .modal::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.75);
   }
 
   @media (min-width: 641px) {
