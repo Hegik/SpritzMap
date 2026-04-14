@@ -68,7 +68,8 @@
 
   .modal {
     position: relative;
-    background: white;
+    background: #e8500a;
+    color: white;
     width: 100%;
     max-width: 680px;
     height: 100%;
@@ -97,7 +98,8 @@
     width: 36px;
     height: 36px;
     border: none;
-    background: #f0f0f0;
+    background: rgba(255, 255, 255, 0.25);
+    color: white;
     border-radius: 50%;
     font-size: 1rem;
     cursor: pointer;
@@ -109,7 +111,7 @@
   }
 
   .close-btn:hover {
-    background: #ddd;
+    background: rgba(255, 255, 255, 0.4);
   }
 
   /* Markdown content styles */
@@ -117,34 +119,34 @@
     font-size: 1.5rem;
     font-weight: 700;
     margin: 0 0 1rem;
-    color: #e8500a;
+    color: white;
   }
 
   .content :global(h2) {
     font-size: 1.1rem;
     font-weight: 600;
     margin: 1.75rem 0 0.5rem;
-    color: #333;
+    color: white;
   }
 
   .content :global(h3) {
     font-size: 1rem;
     font-weight: 600;
     margin: 1.25rem 0 0.4rem;
-    color: #444;
+    color: white;
   }
 
   .content :global(p) {
     margin: 0 0 0.75rem;
     line-height: 1.6;
-    color: #444;
+    color: rgba(255, 255, 255, 0.9);
   }
 
   .content :global(ul),
   .content :global(ol) {
     margin: 0 0 0.75rem 1.25rem;
     line-height: 1.6;
-    color: #444;
+    color: rgba(255, 255, 255, 0.9);
   }
 
   .content :global(li) {
@@ -153,7 +155,7 @@
 
   .content :global(strong) {
     font-weight: 600;
-    color: #222;
+    color: white;
   }
 
   .content :global(img) {
@@ -165,12 +167,12 @@
 
   .content :global(hr) {
     border: none;
-    border-top: 1px solid #eee;
+    border-top: 1px solid rgba(255, 255, 255, 0.3);
     margin: 1.5rem 0;
   }
 
   .content :global(code) {
-    background: #f5f5f5;
+    background: rgba(255, 255, 255, 0.2);
     padding: 2px 5px;
     border-radius: 4px;
     font-size: 0.875em;
