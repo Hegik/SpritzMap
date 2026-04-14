@@ -52,6 +52,13 @@ const de = {
     error_generic: 'Fehler',
   },
 
+  // Help Modal
+  help: {
+    btn_aria: 'Anleitung',
+    close_aria: 'Schließen',
+    error: 'Anleitung konnte nicht geladen werden.',
+  },
+
   // Map Popups
   map: {
     locate: 'Mein Standort',

@@ -3,6 +3,7 @@
   import { drinks, selectedDrinkId, selectedPriceTier } from '$lib/stores/map';
   import { getGlassIconDataUrl, getEmptyGlassDataUrl, getNodataGlassDataUrl, buildIconHtml } from '$lib/utils/markerIcon';
   import PriceSubmitModal from '$lib/components/PriceSubmitModal.svelte';
+  import HelpModal from '$lib/components/HelpModal.svelte';
   import { isLoggedIn } from '$lib/stores/auth';
   import { t } from '$lib/i18n';
   import type { Map, Popup, GeoJSONSource } from 'maplibre-gl';
@@ -19,6 +20,7 @@
   let submitLocationId = $state<number | null>(null);
   let submitLocationName = $state('');
   let submitIsEmpty = $state(false);
+  let helpOpen = $state(false);
 
   const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -264,7 +266,11 @@
     }, 0);
   }
 
-  onMount(async () => {
+  onMount(() => {
+    let unsubDrink: (() => void) | undefined;
+    let unsubTier: (() => void) | undefined;
+
+    (async () => {
     const maplibre = await import('maplibre-gl');
     await import('maplibre-gl/dist/maplibre-gl.css');
 
@@ -301,9 +307,6 @@
     });
 
     popup = new maplibre.Popup({ closeButton: true, maxWidth: '280px' });
-
-    let unsubDrink: () => void;
-    let unsubTier: () => void;
 
     map.on('load', async () => {
       for (const layer of ['markers-priced', 'markers-nodata']) {
@@ -351,6 +354,7 @@
         loadMarkers($selectedDrinkId, tier);
       });
     });
+    })();
 
     return () => {
       unsubDrink?.();
@@ -378,6 +382,16 @@
   ◎
 </button>
 
+<button
+  class="help-btn"
+  aria-label={$t.help.btn_aria}
+  onclick={() => (helpOpen = true)}
+>
+  ?
+</button>
+
+<HelpModal bind:open={helpOpen} />
+
 <PriceSubmitModal
   bind:open={submitOpen}
   locationId={submitLocationId}
@@ -392,17 +406,16 @@
     height: 100%;
   }
 
-  .locate-btn {
+  .locate-btn,
+  .help-btn {
     position: absolute;
     bottom: 1.5rem;
-    left: 0.65rem;
     z-index: 5;
     width: 34px;
     height: 34px;
     background: #e8500a;
     border: none;
     border-radius: 6px;
-    font-size: 1.1rem;
     line-height: 1;
     cursor: pointer;
     display: flex;
@@ -413,13 +426,26 @@
     color: white;
   }
 
+  .locate-btn {
+    left: 0.65rem;
+    font-size: 1.1rem;
+  }
+
+  .help-btn {
+    left: calc(0.65rem + 34px + 8px);
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
   @media (max-width: 640px) {
-    .locate-btn {
+    .locate-btn,
+    .help-btn {
       bottom: 4.5rem;
     }
   }
 
-  .locate-btn:hover { background: #d04508; }
+  .locate-btn:hover,
+  .help-btn:hover { background: #d04508; }
 
   :global(.popup-btn) {
     margin-top: 6px;

@@ -5,6 +5,16 @@
   const priceTiers = ['€', '€€', '€€€'];
   let collapsed = $state(false);
 
+  $effect(() => {
+    const isMobile = window.matchMedia('(max-width: 640px)').matches;
+    if (isMobile && !collapsed) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  });
+
   function selectDrink(id: number) {
     selectedDrinkId.set(id);
   }
@@ -130,6 +140,7 @@
       flex-direction: row;
       gap: 1.5rem;
       overflow-x: auto;
+      overscroll-behavior: contain;
     }
   }
 
