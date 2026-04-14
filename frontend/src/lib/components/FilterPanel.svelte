@@ -89,6 +89,8 @@
       right: 0;
       border-radius: 14px 14px 0 0;
       transition: transform 0.3s ease;
+      z-index: 10;
+      padding-bottom: env(safe-area-inset-bottom);
     }
 
     .filter-panel.collapsed .content {
@@ -102,7 +104,9 @@
       gap: 8px;
       width: 100%;
       padding: 12px 16px;
-      background: none;
+      background: transparent;
+      -webkit-appearance: none;
+      appearance: none;
       border: none;
       border-bottom: 1px solid rgba(255, 255, 255, 0.2);
       cursor: pointer;

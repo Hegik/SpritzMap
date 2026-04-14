@@ -242,7 +242,7 @@
     } else if (props.popup_type === 'nodata') {
       html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price_for_drink}</em>`;
       html += buildOtherDrinksHtml(allPrices, null);
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="true">${$t.map.btn_add_spritz}</button>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">${$t.map.btn_add_spritz}</button>`;
     } else {
       html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price}</em>`;
       html += buildOtherDrinksHtml(allPrices, null);
