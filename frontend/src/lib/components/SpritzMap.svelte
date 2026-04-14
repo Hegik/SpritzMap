@@ -399,17 +399,18 @@
     z-index: 5;
     width: 34px;
     height: 34px;
-    background: white;
-    border: 2px solid rgba(0,0,0,0.25);
-    border-radius: 4px;
+    background: #e8500a;
+    border: none;
+    border-radius: 6px;
     font-size: 1.1rem;
     line-height: 1;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 1px 5px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 8px rgba(232, 80, 10, 0.45);
     padding: 0;
+    color: white;
   }
 
   @media (max-width: 640px) {
@@ -418,7 +419,7 @@
     }
   }
 
-  .locate-btn:hover { background: #f4f4f4; }
+  .locate-btn:hover { background: #d04508; }
 
   :global(.popup-btn) {
     margin-top: 6px;

@@ -55,13 +55,13 @@
   .filter-panel {
     position: absolute;
     z-index: 5;
-    background: white;
+    background: #e8500a;
     border-radius: 10px;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.25);
     overflow: hidden;
   }
 
-  /* ── Desktop: floating top-left ── */
+  /* ── Desktop: floating top-right ── */
   @media (min-width: 641px) {
     .filter-panel {
       top: 1rem;
@@ -104,11 +104,11 @@
       padding: 12px 16px;
       background: none;
       border: none;
-      border-bottom: 1px solid #f0f0f0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
       cursor: pointer;
       font-size: 0.95rem;
       font-weight: 600;
-      color: #333;
+      color: white;
     }
 
     .filter-panel.collapsed .toggle {
@@ -117,7 +117,7 @@
 
     .toggle-icon {
       font-size: 0.7rem;
-      color: #888;
+      color: rgba(255, 255, 255, 0.7);
     }
 
     .content {
@@ -132,7 +132,7 @@
   h3 {
     font-size: 0.72rem;
     text-transform: uppercase;
-    color: #888;
+    color: rgba(255, 255, 255, 0.65);
     margin: 0.75rem 0 0.4rem;
     white-space: nowrap;
   }
@@ -158,9 +158,10 @@
     align-items: center;
     gap: 8px;
     padding: 6px 10px;
-    border: 1.5px solid #e0e0e0;
+    border: 1.5px solid rgba(255, 255, 255, 0.35);
     border-radius: 6px;
-    background: white;
+    background: rgba(255, 255, 255, 0.12);
+    color: white;
     cursor: pointer;
     font-size: 0.875rem;
     transition: all 0.15s;
@@ -168,12 +169,14 @@
   }
 
   button:hover {
-    border-color: #aaa;
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.6);
   }
 
   button.active {
-    border-color: #555;
-    background: #f5f5f5;
+    background: white;
+    color: #e8500a;
+    border-color: white;
     font-weight: 600;
   }
 

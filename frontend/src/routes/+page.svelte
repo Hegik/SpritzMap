@@ -30,7 +30,7 @@
 </script>
 
 <svelte:head>
-  <title>SpritzMap — Spritz Preise in Berlin</title>
+  <title>SpritzMap</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
 </svelte:head>
 
