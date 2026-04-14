@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import logo from '$lib/assets/logo.png?url';
+  import logo from '$lib/assets/logo.svg?url';
   import SpritzMap from '$lib/components/SpritzMap.svelte';
   import FilterPanel from '$lib/components/FilterPanel.svelte';
   import AuthModal from '$lib/components/AuthModal.svelte';
