@@ -286,7 +286,7 @@
               'https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_grau/default/GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png'
             ],
             tileSize: 256,
-            attribution: '© GeoBasis-DE / BKG 2024',
+            attribution: '© GeoBasis-DE / BKG 2024 | © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>-Mitwirkende',
           },
           'wms-lor': {
             type: 'raster',
