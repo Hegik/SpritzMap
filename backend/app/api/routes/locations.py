@@ -55,9 +55,11 @@ async def get_locations_geojson(
             Location,
             PriceEntry.price,
             PriceEntry.drink_id,
+            PriceEntry.reported_at,
             Drink.name.label("drink_name"),
             Drink.color_hex,
             color_sq.c.avg_color,
+            User.username,
             ST_X(Location.geom).label("lng"),
             ST_Y(Location.geom).label("lat"),
         )
@@ -69,6 +71,7 @@ async def get_locations_geojson(
             & (PriceEntry.reported_at == latest_price_sq.c.max_reported_at),
         )
         .join(Drink, PriceEntry.drink_id == Drink.id)
+        .join(User, PriceEntry.user_id == User.id)
         .join(
             color_sq,
             (color_sq.c.location_id == Location.id)
@@ -86,7 +89,7 @@ async def get_locations_geojson(
 
     features = []
     for row in rows:
-        location, price, drink_id_val, drink_name, color_hex, avg_color, lng, lat = row
+        location, price, drink_id_val, reported_at, drink_name, color_hex, avg_color, username, lng, lat = row
         tier = settings.get_price_tier(price)
 
         if price_tier and tier != price_tier:
@@ -106,6 +109,8 @@ async def get_locations_geojson(
                 "price": price,
                 "price_tier": tier,
                 "avg_color_value": round(avg_color or 128),
+                "reported_by": username,
+                "reported_at": reported_at.strftime("%d.%m.%Y"),
             },
         })
 

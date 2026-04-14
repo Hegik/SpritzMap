@@ -237,7 +237,8 @@
       html += `<div style="display:flex;justify-content:center;margin:6px 0;">${popupIconHtml}</div>`;
       html += `${props.drink_name} — <b>${Number(props.price).toFixed(2)} €</b>`;
       html += buildOtherDrinksHtml(allPrices, props.drink_id);
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">${$t.map.btn_add_spritz}</button>`;
+      html += `<div class="popup-meta">${$t.map.popup_reported_by(props.reported_by, props.reported_at)}</div>`;
+      if ($isLoggedIn) html += `<button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">${$t.map.btn_add_spritz}</button>`;
     } else if (props.popup_type === 'nodata') {
       html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price_for_drink}</em>`;
       html += buildOtherDrinksHtml(allPrices, null);
@@ -430,6 +431,13 @@
     font-weight: 600;
     cursor: pointer;
     width: 100%;
+  }
+
+  :global(.popup-meta) {
+    margin-top: 8px;
+    font-size: 0.72rem;
+    color: #bbb;
+    text-align: right;
   }
 
   :global(.popup-other-drinks) {

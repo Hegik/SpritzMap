@@ -58,6 +58,7 @@ const de = {
     popup_no_price_for_drink: 'Hier wurde noch kein Spritz erfasst.',
     popup_no_price: 'Noch kein Preis erfasst',
     popup_other_drinks: 'Weitere Sorten',
+    popup_reported_by: (user: string, date: string) => `Erfasst von ${user} am ${date}`,
     btn_add_spritz: 'Spritz hinzufügen',
   },
 
