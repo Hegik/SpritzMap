@@ -369,6 +369,11 @@
 
 <div bind:this={mapEl} class="map-container"></div>
 
+<div class="zoom-btns">
+  <button class="zoom-btn" title="Vergrößern" onclick={() => map?.zoomIn()}>+</button>
+  <button class="zoom-btn" title="Verkleinern" onclick={() => map?.zoomOut()}>−</button>
+</div>
+
 <button
   class="locate-btn"
   title={$t.map.locate}
@@ -426,6 +431,41 @@
     color: white;
   }
 
+  .zoom-btns {
+    position: absolute;
+    bottom: calc(1.5rem + 34px + 8px);
+    left: 0.65rem;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(232, 80, 10, 0.45);
+  }
+
+  .zoom-btn {
+    width: 34px;
+    height: 34px;
+    background: #e8500a;
+    border: none;
+    border-radius: 0;
+    color: white;
+    font-size: 1.25rem;
+    font-weight: 400;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .zoom-btn:first-child {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.25);
+  }
+
+  .zoom-btn:hover { background: #d04508; }
+
   .locate-btn {
     left: 0.65rem;
     font-size: 1.1rem;
@@ -441,6 +481,10 @@
     .locate-btn,
     .help-btn {
       bottom: 4.5rem;
+    }
+
+    .zoom-btns {
+      bottom: calc(4.5rem + 34px + 8px);
     }
   }
 

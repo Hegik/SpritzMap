@@ -2,9 +2,11 @@
 
 SpritzMap zeigt dir, wo du in Berlin Aperol Spritz, Limoncello Spritz und Co. zu welchem Preis und in welchem Mischverhältnis bekommst.
 
-## Die Karte lesen
+## Die Karte 
 
-Die Weinglas Symbole auf der Karte zeigen Bars und Biergärten mit erfassten Spritz-Preisen.
+Durch Scrollen, oder Touch-Gestene kann durch die Karte navigiert werden. Bei näherer Zoomstufe werden die einzelnen Lokale als Spritzläser angezeigt.
+
+Die Spritz Symbole auf der Karte zeigen Bars und Biergärten mit erfassten Spritz-Preisen.
 Die Farbe des Symbols entspricht der ausgewählten Spritz-Sorte.
 Je kräftiger die Farbe, desto mehr Aperol (bzw. Likör) ist im Glas.
 
