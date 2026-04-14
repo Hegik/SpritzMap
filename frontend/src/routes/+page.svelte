@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import logo from '$lib/assets/logo.png?url';
   import SpritzMap from '$lib/components/SpritzMap.svelte';
   import FilterPanel from '$lib/components/FilterPanel.svelte';
   import AuthModal from '$lib/components/AuthModal.svelte';
@@ -36,7 +37,7 @@
 <div class="app">
   <header>
     <div class="logo">
-      🍹 <span>SpritzMap</span>
+      <img src={logo} alt="SpritzMap" class="logo-img" />
     </div>
     <nav>
       {#if $isLoggedIn}
@@ -71,38 +72,42 @@
     align-items: center;
     justify-content: space-between;
     padding: 0.75rem 1.25rem;
-    background: white;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    background: #e8500a;
     z-index: 10;
   }
 
-  .logo {
-    font-size: 1.2rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .logo { display: flex; align-items: center; }
+
+  .logo-img {
+    height: 32px;
+    width: auto;
+    display: block;
   }
 
   nav { display: flex; align-items: center; gap: 12px; }
 
-  .username { font-size: 0.875rem; color: #555; }
+  .username { font-size: 0.875rem; color: rgba(255, 255, 255, 0.85); }
 
   button {
     padding: 6px 14px;
-    border: 1.5px solid #ccc;
+    border: 1.5px solid rgba(255, 255, 255, 0.5);
     border-radius: 6px;
-    background: white;
+    background: transparent;
+    color: white;
     cursor: pointer;
     font-size: 0.875rem;
   }
 
+  button:hover { background: rgba(255, 255, 255, 0.15); }
+
   button.cta {
-    background: #e8500a;
-    color: white;
-    border-color: #e8500a;
+    background: white;
+    color: #e8500a;
+    border-color: white;
     font-weight: 600;
   }
+
+  button.cta:hover { background: rgba(255, 255, 255, 0.9); }
 
   main {
     flex: 1;
