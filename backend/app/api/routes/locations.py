@@ -71,7 +71,7 @@ async def get_locations_geojson(
             & (PriceEntry.reported_at == latest_price_sq.c.max_reported_at),
         )
         .join(Drink, PriceEntry.drink_id == Drink.id)
-        .join(User, PriceEntry.user_id == User.id)
+        .outerjoin(User, PriceEntry.user_id == User.id)
         .join(
             color_sq,
             (color_sq.c.location_id == Location.id)
@@ -109,7 +109,7 @@ async def get_locations_geojson(
                 "price": price,
                 "price_tier": tier,
                 "avg_color_value": round(avg_color or 128),
-                "reported_by": username,
+                "reported_by": username or "Gelöschter Nutzer",
                 "reported_at": reported_at.strftime("%d.%m.%Y"),
             },
         })

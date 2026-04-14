@@ -4,6 +4,7 @@
   import SpritzMap from '$lib/components/SpritzMap.svelte';
   import FilterPanel from '$lib/components/FilterPanel.svelte';
   import AuthModal from '$lib/components/AuthModal.svelte';
+  import { goto } from '$app/navigation';
   import { authStore, isLoggedIn, user } from '$lib/stores/auth';
   import { drinks, selectedDrinkId } from '$lib/stores/map';
   import { api } from '$lib/api/client';
@@ -41,7 +42,7 @@
     </div>
     <nav>
       {#if $isLoggedIn}
-        <span class="username">{$user?.username}</span>
+        <button class="username-btn" onclick={() => goto('/account')}>{$user?.username}</button>
         <button onclick={() => authStore.logout()}>{$t.nav.logout}</button>
       {:else}
         <button class="cta" onclick={() => (authOpen = true)}>{$t.nav.login}</button>
@@ -87,7 +88,17 @@
 
   nav { display: flex; align-items: center; gap: 12px; }
 
-  .username { font-size: 0.875rem; color: rgba(255, 255, 255, 0.85); }
+  .username-btn {
+    padding: 4px 10px;
+    border: 1.5px solid rgba(255, 255, 255, 0.4);
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.9);
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  .username-btn:hover { background: rgba(255, 255, 255, 0.15); color: white; }
 
   button {
     padding: 6px 14px;

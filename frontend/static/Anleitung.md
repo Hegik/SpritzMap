@@ -40,10 +40,9 @@ Mit dem Standort-Button (◎) unten links auf der Karte springst du zu deiner ak
 
 **Wieso ist mein lieblings Lokal nicht auf der Karte?**
 
-Die Lokale werden einmal am Tag von OpenStreetMap abgerufen. Nur wenn ein Lokal dort hinterlegt ist, kann es in der Spritzmap vorkommen. 
+> Die Lokale werden einmal am Tag von OpenStreetMap abgerufen. Nur wenn ein Lokal dort hinterlegt ist, kann es in der Spritzmap vorkommen. 
 
 **Wie berechnet sich die Einfärbung der Gebiete?**
 
-Die Intensität ergibt sich aus zwei Faktoren: dem **Preis** und dem **Mischverhältnis** der erfassten Einträge im jeweiligen Gebiet.
-
-Zuerst wird ein Preis-Score berechnet: Günstige Gebiete bekommen einen hohen Wert (nahe 1), teure einen niedrigen (nahe 0). Der Vergleich erfolgt logarithmisch – ein Unterschied von 5 € auf 6 € fällt stärker ins Gewicht als von 9 € auf 10 €. Anschließend wird dieser Wert mit dem durchschnittlichen Mischverhältnis der Einträge multipliziert – ein hoher Aperol-Anteil verstärkt die Einfärbung, ein niedriger schwächt sie ab. Das Ergebnis ist der **Spritz-Index** (0–100), der direkt die Deckkraft der Gebietsfarbe bestimmt.
+> Die Intensität ergibt sich aus zwei Faktoren: dem **Preis** und dem **Mischverhältnis** der erfassten Einträge im jeweiligen Gebiet.
+> Zuerst wird ein Preis-Score berechnet: Günstige Gebiete bekommen einen hohen Wert (nahe 1), teure einen niedrigen (nahe 0). Der Vergleich erfolgt logarithmisch – ein Unterschied von 5 € auf 6 € fällt stärker ins Gewicht als von 9 € auf 10 €. Anschließend wird dieser Wert mit dem durchschnittlichen Mischverhältnis der Einträge multipliziert – ein hoher Aperol-Anteil verstärkt die Einfärbung, ein niedriger schwächt sie ab. Das Ergebnis ist der **Spritz-Index** (0–100), der direkt die Deckkraft der Gebietsfarbe bestimmt.

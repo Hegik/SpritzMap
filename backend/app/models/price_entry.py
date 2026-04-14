@@ -10,7 +10,7 @@ class PriceEntry(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), index=True)
     drink_id: Mapped[int] = mapped_column(ForeignKey("drinks.id"), index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), index=True, nullable=True)
 
     price: Mapped[float] = mapped_column(Float)
     # 0–255 color intensity slider
@@ -28,5 +28,5 @@ class PriceEntry(Base):
 
     location: Mapped["Location"] = relationship(back_populates="price_entries")
     drink: Mapped["Drink"] = relationship(back_populates="price_entries")
-    user: Mapped["User"] = relationship(back_populates="price_entries")
+    user: Mapped["User | None"] = relationship(back_populates="price_entries")
     moderation_logs: Mapped[list["ModerationLog"]] = relationship(back_populates="price_entry")
