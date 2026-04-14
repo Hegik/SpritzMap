@@ -4,6 +4,7 @@
   import { authStore, isLoggedIn, user } from '$lib/stores/auth';
   import { api } from '$lib/api/client';
   import { t } from '$lib/i18n';
+  import AppHeader from '$lib/components/AppHeader.svelte';
 
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -128,10 +129,7 @@
 </svelte:head>
 
 <div class="page">
-  <div class="topbar">
-    <a href="/" class="back-link">{$t.account.back_to_map}</a>
-    <h1>{$t.account.page_title}</h1>
-  </div>
+  <AppHeader />
 
   <div class="cards">
 
@@ -252,30 +250,6 @@
     min-height: 100dvh;
     background: #f5f5f5;
     font-family: system-ui, sans-serif;
-  }
-
-  .topbar {
-    background: #e8500a;
-    padding: 0 1.25rem;
-    height: 48px;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .back-link {
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 0.875rem;
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .back-link:hover { color: white; }
-
-  h1 {
-    color: white;
-    font-size: 1.1rem;
-    font-weight: 600;
-    margin: 0;
   }
 
   .cards {

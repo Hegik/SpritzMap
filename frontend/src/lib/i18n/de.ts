@@ -3,6 +3,7 @@ const de = {
   nav: {
     logout: 'Abmelden',
     login: 'Anmelden',
+    account: 'Account',
   },
 
   // Filter Panel
