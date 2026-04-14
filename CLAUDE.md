@@ -9,14 +9,14 @@ SpritzMap is a WebMap for visualizing Spritz drink prices (Aperol, Limoncello, e
 ## Architecture
 
 ```
-frontend/   — SvelteKit 5 (Runes) + Leaflet + TypeScript
+frontend/   — SvelteKit 5 (Runes) + MapLibre GL + TypeScript
 backend/    — FastAPI (Python 3.12) + SQLAlchemy async + PostGIS
 geoserver/  — kartoza/geoserver Docker image, reads from the same DB
 ```
 
 **Key data flow:**
 - Locations are synced from OSM (Overpass API) on startup + every 24h (`backend/app/services/osm_sync.py`)
-- `GET /locations/geojson` returns filtered GeoJSON for Leaflet markers
+- `GET /locations/geojson` returns filtered GeoJSON for MapLibre GL markers
 - GeoServer publishes a WMS layer `spritzmap:lor_price_summary` — shown at zoom < 17, hidden at zoom ≥ 17
 - The layer is parameterized via `viewparams=drink_id:X`; color and index are computed per-drink in SQL
 
@@ -66,7 +66,7 @@ Services: frontend `:3000`, backend `:8000`, geoserver `:8080`, postgres `:5432`
 | `backend/app/services/osm_sync.py` | OSM Overpass sync logic, Berlin bbox |
 | `backend/app/api/routes/locations.py` | GeoJSON endpoint with drink/price filter |
 | `frontend/src/lib/utils/markerIcon.ts` | SVG wine glass icon generator (color + intensity) |
-| `frontend/src/lib/components/SpritzMap.svelte` | Main Leaflet map, marker loading, WMS layer |
+| `frontend/src/lib/components/SpritzMap.svelte` | Main MapLibre GL map, marker loading, WMS layer |
 | `geoserver/README.md` | Step-by-step GeoServer LOR layer setup |
 
 ## Price Tiers
@@ -94,7 +94,7 @@ Each service is a separate Coolify application backed by the shared PostgreSQL i
 - All components use **Runes syntax** (`$state`, `$props`, `$effect`, `$bindable`)
 - Svelte stores (`authStore`, `drinks`, `selectedDrinkId`, `selectedPriceTier`) are used for cross-component state
 - `on:click` → `onclick` (Svelte 5 native event syntax)
-- Leaflet is imported dynamically inside `onMount` to avoid SSR issues
+- MapLibre GL is imported dynamically inside `onMount` to avoid SSR issues
 
 ## Offene Aufgaben
 
