@@ -12,38 +12,34 @@
       goto('/');
     }
   });
+
+  const navItems = $derived([
+    { href: '/moderation/dashboard', label: $t.moderation.nav_dashboard, icon: '📊' },
+    { href: '/moderation/entries',   label: $t.moderation.nav_entries,   icon: '📋' },
+    ...($user?.role === 'admin'
+      ? [{ href: '/moderation/users', label: $t.moderation.nav_users, icon: '👥' }]
+      : []),
+  ]);
+
+  function onMobileSelect(e: Event) {
+    goto((e.target as HTMLSelectElement).value);
+  }
 </script>
 
 <div class="mod-shell">
+  <!-- Desktop sidebar -->
   <aside class="sidebar">
     <div class="sidebar-header">
       <span class="sidebar-title">{$t.moderation.panel_title}</span>
     </div>
 
     <nav class="sidebar-nav">
-      <a
-        href="/moderation/dashboard"
-        class:active={$page.url.pathname.startsWith('/moderation/dashboard')}
-      >
-        <span class="nav-icon">📊</span>
-        {$t.moderation.nav_dashboard}
-      </a>
-      <a
-        href="/moderation/entries"
-        class:active={$page.url.pathname.startsWith('/moderation/entries')}
-      >
-        <span class="nav-icon">📋</span>
-        {$t.moderation.nav_entries}
-      </a>
-      {#if $user?.role === 'admin'}
-        <a
-          href="/moderation/users"
-          class:active={$page.url.pathname.startsWith('/moderation/users')}
-        >
-          <span class="nav-icon">👥</span>
-          {$t.moderation.nav_users}
+      {#each navItems as item}
+        <a href={item.href} class:active={$page.url.pathname.startsWith(item.href)}>
+          <span class="nav-icon">{item.icon}</span>
+          {item.label}
         </a>
-      {/if}
+      {/each}
     </nav>
 
     <div class="sidebar-footer">
@@ -51,9 +47,22 @@
     </div>
   </aside>
 
-  <main class="mod-content">
-    {@render children()}
-  </main>
+  <div class="main-wrap">
+    <!-- Mobile topbar -->
+    <div class="mobile-topbar">
+      <span class="mobile-title">{$t.moderation.panel_title}</span>
+      <select class="mobile-nav-select" value={$page.url.pathname} onchange={onMobileSelect}>
+        {#each navItems as item}
+          <option value={item.href}>{item.icon} {item.label}</option>
+        {/each}
+      </select>
+      <a href="/" class="mobile-back">{$t.moderation.back_to_map}</a>
+    </div>
+
+    <main class="mod-content">
+      {@render children()}
+    </main>
+  </div>
 </div>
 
 <style>
@@ -64,6 +73,7 @@
     background: #f5f5f5;
   }
 
+  /* ── Desktop sidebar ──────────────────────────────────────── */
   .sidebar {
     width: 220px;
     flex-shrink: 0;
@@ -103,7 +113,6 @@
     color: #aaa;
     text-decoration: none;
     font-size: 0.875rem;
-    border-radius: 0;
     transition: background 0.15s, color 0.15s;
   }
 
@@ -118,11 +127,7 @@
     font-weight: 600;
   }
 
-  .nav-icon {
-    font-size: 1rem;
-    width: 1.2rem;
-    text-align: center;
-  }
+  .nav-icon { font-size: 1rem; width: 1.2rem; text-align: center; }
 
   .sidebar-footer {
     padding: 1rem;
@@ -137,9 +142,65 @@
   }
   .back-link:hover { color: #ccc; }
 
+  /* ── Main area ────────────────────────────────────────────── */
+  .main-wrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
   .mod-content {
     flex: 1;
     overflow-y: auto;
     padding: 2rem;
+  }
+
+  /* ── Mobile topbar (hidden on desktop) ───────────────────── */
+  .mobile-topbar { display: none; }
+
+  @media (max-width: 640px) {
+    .sidebar { display: none; }
+
+    .mobile-topbar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.6rem 1rem;
+      background: #1a1a2e;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .mobile-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #e8500a;
+      flex-shrink: 0;
+    }
+
+    .mobile-nav-select {
+      flex: 1;
+      min-width: 0;
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,0.2);
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      font-size: 0.875rem;
+      cursor: pointer;
+    }
+
+    .mobile-back {
+      color: #888;
+      text-decoration: none;
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+    .mobile-back:hover { color: #ccc; }
+
+    .mod-content { padding: 1rem; }
   }
 </style>

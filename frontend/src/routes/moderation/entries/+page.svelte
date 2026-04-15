@@ -7,6 +7,7 @@
     id: number;
     location_name: string;
     drink_name: string;
+    color_hex: string;
     username: string | null;
     price: number;
     reported_at: string;
@@ -197,7 +198,7 @@
         </thead>
         <tbody>
           {#each entries as entry}
-            <tr class:removed={!entry.is_current}>
+            <tr class:removed={!entry.is_current} style="background: {entry.is_current ? entry.color_hex + '18' : 'transparent'}">
               <td class="col-check">
                 <input
                   type="checkbox"

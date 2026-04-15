@@ -184,7 +184,7 @@
                       {$t.moderation.btn_activate}
                     </button>
                   {/if}
-                  <button class="icon-btn" title="Konto löschen" onclick={() => askDeleteUser(u.id)}>🗑</button>
+                  <button class="btn-delete" onclick={() => askDeleteUser(u.id)}>Löschen</button>
                 {/if}
               </td>
             </tr>
@@ -369,16 +369,17 @@
 
   .actions-cell { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
 
-  .icon-btn {
-    background: none;
+  .btn-delete {
+    padding: 3px 10px;
+    background: #d32f2f;
+    color: white;
     border: none;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    font-weight: 600;
     cursor: pointer;
-    font-size: 1rem;
-    padding: 2px 4px;
-    border-radius: 4px;
-    opacity: 0.6;
   }
-  .icon-btn:hover { opacity: 1; background: #fce8e8; }
+  .btn-delete:hover { background: #b71c1c; }
 
   .btn-danger {
     padding: 0.4rem 0.9rem;

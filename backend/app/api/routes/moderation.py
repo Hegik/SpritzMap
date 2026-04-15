@@ -120,7 +120,7 @@ async def list_entries(
     total = total_result.scalar_one()
 
     base_query = joins(
-        select(PriceEntry, Location.name.label("location_name"), Drink.name.label("drink_name"), User.username.label("username"))
+        select(PriceEntry, Location.name.label("location_name"), Drink.name.label("drink_name"), Drink.color_hex.label("color_hex"), User.username.label("username"))
     )
     if conditions:
         base_query = base_query.where(and_(*conditions))
@@ -132,11 +132,12 @@ async def list_entries(
 
     items = []
     for row in rows:
-        entry, location_name_val, drink_name_val, username_val = row
+        entry, location_name_val, drink_name_val, color_hex_val, username_val = row
         items.append({
             "id": entry.id,
             "location_name": location_name_val,
             "drink_name": drink_name_val,
+            "color_hex": color_hex_val,
             "username": username_val,
             "price": entry.price,
             "reported_at": entry.reported_at,
