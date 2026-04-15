@@ -33,6 +33,7 @@
   function logout() {
     closeDropdown();
     authStore.logout();
+    goto('/');
   }
 </script>
 
