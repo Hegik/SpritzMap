@@ -73,6 +73,26 @@
     }
   }
 
+  // ── delete user ───────────────────────────────────────────────────────────
+  let confirmDeleteUserId = $state<number | null>(null);
+
+  function askDeleteUser(userId: number) {
+    confirmDeleteUserId = userId;
+  }
+
+  async function confirmDeleteUser() {
+    if (confirmDeleteUserId === null) return;
+    try {
+      await api.delete(`/admin/users/${confirmDeleteUserId}`);
+      users = users.filter((u) => u.id !== confirmDeleteUserId);
+      total -= 1;
+    } catch (e) {
+      error = e instanceof Error ? e.message : $t.moderation.error_generic;
+    } finally {
+      confirmDeleteUserId = null;
+    }
+  }
+
   const totalPages = $derived(Math.max(1, Math.ceil(total / limit)));
 
   const roleLabel: Record<string, string> = {
@@ -153,7 +173,7 @@
                   {u.is_verified ? 'Ja' : 'Nein'}
                 </span>
               </td>
-              <td>
+              <td class="actions-cell">
                 {#if !isSelf}
                   {#if u.is_active}
                     <button class="btn-warn" onclick={() => toggleActive(u.id, false)}>
@@ -164,6 +184,7 @@
                       {$t.moderation.btn_activate}
                     </button>
                   {/if}
+                  <button class="icon-btn" title="Konto löschen" onclick={() => askDeleteUser(u.id)}>🗑</button>
                 {/if}
               </td>
             </tr>
@@ -180,6 +201,17 @@
     </div>
   {/if}
 </div>
+
+{#if confirmDeleteUserId !== null}
+  <div class="dialog-backdrop" role="presentation" onclick={() => confirmDeleteUserId = null}></div>
+  <div class="dialog" role="dialog">
+    <p>Konto wirklich löschen? Die Einträge des Nutzers bleiben anonymisiert erhalten.</p>
+    <div class="dialog-actions">
+      <button class="btn-danger" onclick={confirmDeleteUser}>Ja, Konto löschen</button>
+      <button class="btn-ghost" onclick={() => confirmDeleteUserId = null}>Abbrechen</button>
+    </div>
+  </div>
+{/if}
 
 <style>
   .users-page { max-width: 900px; }
@@ -334,4 +366,52 @@
     cursor: pointer;
   }
   .btn-ghost-sm:hover { background: #f0f0f0; }
+
+  .actions-cell { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    padding: 2px 4px;
+    border-radius: 4px;
+    opacity: 0.6;
+  }
+  .icon-btn:hover { opacity: 1; background: #fce8e8; }
+
+  .btn-danger {
+    padding: 0.4rem 0.9rem;
+    background: #d32f2f;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-danger:hover { background: #b71c1c; }
+
+  .dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 200;
+  }
+
+  .dialog {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    z-index: 201;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    min-width: 300px;
+  }
+
+  .dialog p { margin: 0 0 1.25rem; font-size: 0.95rem; }
+  .dialog-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
 </style>

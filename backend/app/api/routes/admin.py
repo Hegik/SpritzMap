@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, update as sa_update
 from app.core.database import get_db
 from app.models.user import User, UserRole
+from app.models.price_entry import PriceEntry
 from app.api.deps import get_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -95,3 +96,29 @@ async def update_user_active(
     target.is_active = body.is_active
     await db.commit()
     return {"id": target.id, "is_active": target.is_active}
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_admin),
+):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Anonymize price entries (same pattern as self-delete in auth.py)
+    await db.execute(
+        sa_update(PriceEntry)
+        .where(PriceEntry.user_id == user_id)
+        .values(user_id=None)
+    )
+
+    await db.delete(target)
+    await db.commit()
+    return {"deleted": user_id}

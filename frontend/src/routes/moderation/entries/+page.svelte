@@ -191,6 +191,7 @@
             <th>{$t.moderation.col_user}</th>
             <th>{$t.moderation.col_date}</th>
             <th>{$t.moderation.col_status}</th>
+            <th>Notiz</th>
             <th></th>
           </tr>
         </thead>
@@ -214,6 +215,7 @@
                   {entry.is_current ? $t.moderation.status_current : $t.moderation.status_removed}
                 </span>
               </td>
+              <td class="note-cell">{entry.note ?? '–'}</td>
               <td>
                 {#if entry.is_current}
                   <button class="icon-btn" title="Löschen" onclick={() => askDelete(entry.id)}>🗑</button>
@@ -337,6 +339,7 @@
   tbody tr.removed { opacity: 0.5; }
 
   .col-check { width: 36px; }
+  .note-cell { color: #777; font-size: 0.82rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .badge {
     display: inline-block;
