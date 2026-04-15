@@ -11,7 +11,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? 'Request failed');
+    throw new Error(`${res.status}: ${err.detail ?? 'Request failed'}`);
   }
   const text = await res.text();
   return (text ? JSON.parse(text) : null) as T;

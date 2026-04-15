@@ -53,8 +53,8 @@
       entries = data.items;
       total = data.total;
       selected = new Set();
-    } catch {
-      error = $t.moderation.error_generic;
+    } catch (e) {
+      error = e instanceof Error ? e.message : $t.moderation.error_generic;
     } finally {
       loading = false;
     }
@@ -108,8 +108,8 @@
       await api.post('/moderation/entries/bulk-delete', { entry_ids: ids });
       deleteTarget = null;
       await load();
-    } catch {
-      error = $t.moderation.error_generic;
+    } catch (e) {
+      error = e instanceof Error ? e.message : $t.moderation.error_generic;
     }
   }
 

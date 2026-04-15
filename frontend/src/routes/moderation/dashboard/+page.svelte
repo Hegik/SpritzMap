@@ -22,8 +22,8 @@
   onMount(async () => {
     try {
       stats = await api.get<Stats>('/moderation/stats');
-    } catch {
-      error = $t.moderation.error_generic;
+    } catch (e) {
+      error = e instanceof Error ? e.message : $t.moderation.error_generic;
     }
   });
 

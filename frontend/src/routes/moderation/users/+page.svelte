@@ -42,8 +42,8 @@
       const data = await api.get<{ total: number; items: ManagedUser[] }>(`/admin/users?${params}`);
       users = data.items;
       total = data.total;
-    } catch {
-      error = $t.moderation.error_generic;
+    } catch (e) {
+      error = e instanceof Error ? e.message : $t.moderation.error_generic;
     } finally {
       loading = false;
     }
@@ -57,8 +57,8 @@
       await api.patch(`/admin/users/${userId}/role`, { role });
       const u = users.find((u) => u.id === userId);
       if (u) u.role = role as ManagedUser['role'];
-    } catch {
-      error = $t.moderation.error_generic;
+    } catch (e) {
+      error = e instanceof Error ? e.message : $t.moderation.error_generic;
     }
   }
 
@@ -68,8 +68,8 @@
       await api.patch(`/admin/users/${userId}/activate`, { is_active: isActive });
       const u = users.find((u) => u.id === userId);
       if (u) u.is_active = isActive;
-    } catch {
-      error = $t.moderation.error_generic;
+    } catch (e) {
+      error = e instanceof Error ? e.message : $t.moderation.error_generic;
     }
   }
 
