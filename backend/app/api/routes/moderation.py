@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, distinct
 from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
 from app.models.price_entry import PriceEntry
@@ -106,18 +106,24 @@ async def list_entries(
     if date_to:
         conditions.append(PriceEntry.reported_at <= date_to)
 
-    base_query = (
-        select(PriceEntry, Location.name.label("location_name"), Drink.name.label("drink_name"), User.username.label("username"))
+    joins = (
+        lambda q: q
         .join(Location, PriceEntry.location_id == Location.id)
         .join(Drink, PriceEntry.drink_id == Drink.id)
         .outerjoin(User, PriceEntry.user_id == User.id)
     )
+
+    count_q = joins(select(func.count(PriceEntry.id)))
+    if conditions:
+        count_q = count_q.where(and_(*conditions))
+    total_result = await db.execute(count_q)
+    total = total_result.scalar_one()
+
+    base_query = joins(
+        select(PriceEntry, Location.name.label("location_name"), Drink.name.label("drink_name"), User.username.label("username"))
+    )
     if conditions:
         base_query = base_query.where(and_(*conditions))
-
-    count_query = select(func.count()).select_from(base_query.subquery())
-    total_result = await db.execute(count_query)
-    total = total_result.scalar_one()
 
     offset = (page - 1) * limit
     rows = await db.execute(
@@ -213,7 +219,7 @@ async def get_stats(
 
     # Locations with at least one price entry
     locations_with_price_result = await db.execute(
-        select(func.count(func.distinct(PriceEntry.location_id)))
+        select(func.count(distinct(PriceEntry.location_id)))
     )
     total_locations_with_price = locations_with_price_result.scalar_one()
 
