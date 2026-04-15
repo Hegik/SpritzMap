@@ -16,6 +16,9 @@
   let stats = $state<Stats | null>(null);
   let error = $state('');
 
+  const drinkChartBars = $derived(stats ? drinkBars(stats.entries_by_drink) : []);
+  const dayChartBars = $derived(stats ? dayBars(stats.entries_last_30_days) : []);
+
   onMount(async () => {
     try {
       stats = await api.get<Stats>('/moderation/stats');
@@ -98,12 +101,11 @@
       <!-- Entries by drink -->
       <div class="chart-box">
         <h2 class="chart-title">{$t.moderation.chart_by_drink}</h2>
-        {#if stats.entries_by_drink.length === 0}
+        {#if drinkChartBars.length === 0}
           <p class="empty">Keine Daten</p>
         {:else}
-          {@const bars = drinkBars(stats.entries_by_drink)}
           <svg viewBox="0 0 {CHART_W} {CHART_H + 32}" class="chart-svg">
-            {#each bars as b}
+            {#each drinkChartBars as b}
               <rect x={b.x} y={b.y} width={b.w} height={b.h} fill={b.color} rx="2" opacity="0.85">
                 <title>{b.label}: {b.count}</title>
               </rect>
@@ -129,9 +131,8 @@
       <!-- Entries last 30 days -->
       <div class="chart-box">
         <h2 class="chart-title">{$t.moderation.chart_last_30_days}</h2>
-        {@const bars = dayBars(stats.entries_last_30_days)}
         <svg viewBox="0 0 {CHART_W} {CHART_H + 32}" class="chart-svg">
-          {#each bars as b}
+          {#each dayChartBars as b}
             {#if b.count > 0}
               <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="#e8500a" rx="1" opacity="0.75">
                 <title>{b.date}: {b.count}</title>
@@ -139,7 +140,7 @@
             {/if}
           {/each}
           <!-- x-axis labels every 7 days -->
-          {#each bars.filter((_, i) => i % 7 === 0) as b}
+          {#each dayChartBars.filter((_, i) => i % 7 === 0) as b}
             <text
               x={b.x + b.w / 2}
               y={CHART_H + 14}
