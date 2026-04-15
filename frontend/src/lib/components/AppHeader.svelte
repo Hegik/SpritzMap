@@ -1,7 +1,7 @@
 <script lang="ts">
   import logo from '$lib/assets/logo.svg?url';
   import { goto } from '$app/navigation';
-  import { authStore, isLoggedIn, user } from '$lib/stores/auth';
+  import { authStore, isLoggedIn, isModerator, user } from '$lib/stores/auth';
   import { t } from '$lib/i18n';
 
   let {
@@ -23,6 +23,11 @@
   function goToAccount() {
     closeDropdown();
     goto('/account');
+  }
+
+  function goToModeration() {
+    closeDropdown();
+    goto('/moderation');
   }
 
   function logout() {
@@ -49,6 +54,9 @@
         </button>
         {#if dropdownOpen}
           <div class="dropdown">
+            {#if $isModerator}
+              <button onclick={goToModeration}>{$t.moderation.panel_title}</button>
+            {/if}
             <button onclick={goToAccount}>{$t.nav.account}</button>
             <button onclick={logout}>{$t.nav.logout}</button>
           </div>

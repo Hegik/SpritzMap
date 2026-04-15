@@ -9,7 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.database import Base
-from app.api.routes import auth, locations, prices, drinks, moderation
+from app.api.routes import auth, locations, prices, drinks, moderation, admin
 from app.services.osm_sync import sync_osm_locations
 import logging
 
@@ -77,6 +77,7 @@ app.include_router(locations.router)
 app.include_router(prices.router)
 app.include_router(drinks.router)
 app.include_router(moderation.router)
+app.include_router(admin.router)
 
 
 @app.get("/health")
