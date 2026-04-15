@@ -1,4 +1,7 @@
 FROM node:20-alpine AS builder
+# bust cache on code-only changes
+LABEL cache_bust=2
+
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --ignore-scripts
