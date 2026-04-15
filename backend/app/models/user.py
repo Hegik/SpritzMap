@@ -1,6 +1,6 @@
-from sqlalchemy import String, Boolean, Enum as SAEnum, DateTime
+from sqlalchemy import String, Boolean, Enum as SAEnum, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import enum
 from app.core.database import Base
 
@@ -24,6 +24,9 @@ class User(Base):
     verification_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     reset_token: Mapped[str | None] = mapped_column(String(128), nullable=True)
     reset_token_expires: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, server_default=func.now()
+    )
 
     price_entries: Mapped[list["PriceEntry"]] = relationship(back_populates="user")
     moderation_logs: Mapped[list["ModerationLog"]] = relationship(back_populates="moderator")

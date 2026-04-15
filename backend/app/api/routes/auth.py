@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.models.user import User
 from app.models.price_entry import PriceEntry
+from app.models.user_deletion_log import UserDeletionLog
 from app.schemas.user import UserRegister, UserOut, Token, ForgotPassword, ResetPassword, UpdateProfile, UpdatePassword
 from fastapi.responses import JSONResponse
 from app.api.deps import get_current_user
@@ -219,5 +220,6 @@ async def delete_me(
         .where(PriceEntry.user_id == current_user.id)
         .values(user_id=None)
     )
+    db.add(UserDeletionLog())
     await db.delete(current_user)
     await db.commit()

@@ -1,13 +1,15 @@
+import calendar
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, distinct
+from sqlalchemy import select, func, and_, distinct, text
 from datetime import datetime, timezone, timedelta
 from app.core.database import get_db
 from app.models.price_entry import PriceEntry
 from app.models.moderation_log import ModerationLog
 from app.models.location import Location
 from app.models.drink import Drink
+from app.models.user_deletion_log import UserDeletionLog
 from app.models.user import User
 from app.api.deps import get_moderator
 
@@ -81,6 +83,23 @@ async def delete_entry(
 
 
 # ── new endpoints ─────────────────────────────────────────────────────────────
+
+@router.get("/filter-options")
+async def get_filter_options(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_moderator),
+):
+    locations_result = await db.execute(
+        select(Location.name).distinct().order_by(Location.name)
+    )
+    usernames_result = await db.execute(
+        select(User.username).where(User.username.isnot(None)).distinct().order_by(User.username)
+    )
+    return {
+        "locations": [r[0] for r in locations_result],
+        "usernames": [r[0] for r in usernames_result],
+    }
+
 
 @router.get("/entries")
 async def list_entries(
@@ -231,3 +250,201 @@ async def get_stats(
         "total_users": total_users,
         "total_locations_with_price": total_locations_with_price,
     }
+
+
+# ── helper ────────────────────────────────────────────────────────────────────
+
+def _time_window(granularity: str, year: int, month: int | None) -> tuple[datetime, datetime]:
+    utc = timezone.utc
+    if granularity == "year":
+        return datetime(year, 1, 1, tzinfo=utc), datetime(year, 12, 31, 23, 59, 59, tzinfo=utc)
+    last_day = calendar.monthrange(year, month)[1]
+    return datetime(year, month, 1, tzinfo=utc), datetime(year, month, last_day, 23, 59, 59, tzinfo=utc)
+
+
+# ── new stats endpoints ───────────────────────────────────────────────────────
+
+@router.get("/stats/users")
+async def stats_users(
+    granularity: str = "month",
+    year: int = 2026,
+    month: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_moderator),
+):
+    if granularity == "month" and not month:
+        month = 1
+    start, end = _time_window(granularity, year, month)
+
+    reg_result = await db.execute(
+        select(
+            func.date_trunc("day", User.created_at).label("day"),
+            func.count(User.id).label("count"),
+        )
+        .where(User.created_at.between(start, end))
+        .group_by(func.date_trunc("day", User.created_at))
+        .order_by(func.date_trunc("day", User.created_at))
+    )
+    registrations = [{"date": row[0].strftime("%Y-%m-%d"), "count": row[1]} for row in reg_result]
+
+    del_result = await db.execute(
+        select(
+            func.date_trunc("day", UserDeletionLog.deleted_at).label("day"),
+            func.count(UserDeletionLog.id).label("count"),
+        )
+        .where(UserDeletionLog.deleted_at.between(start, end))
+        .group_by(func.date_trunc("day", UserDeletionLog.deleted_at))
+        .order_by(func.date_trunc("day", UserDeletionLog.deleted_at))
+    )
+    deletions = [{"date": row[0].strftime("%Y-%m-%d"), "count": row[1]} for row in del_result]
+
+    base_result = await db.execute(
+        select(func.count(User.id)).where(User.created_at < start)
+    )
+    base_count = base_result.scalar_one()
+
+    return {"registrations": registrations, "deletions": deletions, "base_count": base_count}
+
+
+@router.get("/stats/entries")
+async def stats_entries(
+    granularity: str = "month",
+    year: int = 2026,
+    month: int | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_moderator),
+):
+    if granularity == "month" and not month:
+        month = 1
+    start, end = _time_window(granularity, year, month)
+
+    drinks_result = await db.execute(
+        select(Drink.id, Drink.name, Drink.color_hex).order_by(Drink.name)
+    )
+    drinks = [{"id": row[0], "name": row[1], "color_hex": row[2]} for row in drinks_result]
+
+    rows_result = await db.execute(
+        select(
+            func.date_trunc("day", PriceEntry.reported_at).label("day"),
+            PriceEntry.drink_id,
+            func.count(PriceEntry.id).label("count"),
+        )
+        .where(PriceEntry.reported_at.between(start, end))
+        .group_by(func.date_trunc("day", PriceEntry.reported_at), PriceEntry.drink_id)
+        .order_by(func.date_trunc("day", PriceEntry.reported_at))
+    )
+
+    day_map: dict[str, dict[str, int]] = {}
+    for row in rows_result:
+        day_str = row[0].strftime("%Y-%m-%d")
+        if day_str not in day_map:
+            day_map[day_str] = {}
+        day_map[day_str][str(row[1])] = row[2]
+
+    days = [{"date": d, "counts": day_map[d]} for d in sorted(day_map)]
+    return {"drinks": drinks, "days": days}
+
+
+@router.get("/stats/lors")
+async def stats_lors(
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_moderator),
+):
+    result = await db.execute(
+        text("SELECT DISTINCT lor_schluessel, pr_name FROM public.lor ORDER BY pr_name")
+    )
+    return [{"lor_schluessel": row[0], "pr_name": row[1]} for row in result]
+
+
+@router.get("/stats/prices")
+async def stats_prices(
+    granularity: str = "month",
+    year: int = 2026,
+    month: int | None = None,
+    lor_schluessel: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_moderator),
+):
+    if granularity == "month" and not month:
+        month = 1
+    start, end = _time_window(granularity, year, month)
+
+    berlin_result = await db.execute(
+        select(
+            func.date_trunc("day", PriceEntry.reported_at).label("day"),
+            func.avg(PriceEntry.price).label("avg_price"),
+        )
+        .where(PriceEntry.reported_at.between(start, end))
+        .group_by(func.date_trunc("day", PriceEntry.reported_at))
+        .order_by(func.date_trunc("day", PriceEntry.reported_at))
+    )
+    berlin = [{"date": row[0].strftime("%Y-%m-%d"), "avg_price": float(row[1])} for row in berlin_result]
+
+    lor_data = []
+    if lor_schluessel:
+        lor_result = await db.execute(
+            text("""
+                SELECT date_trunc('day', pe.reported_at) AS day, AVG(pe.price) AS avg_price
+                FROM price_entries pe
+                JOIN locations loc ON pe.location_id = loc.id
+                JOIN public.lor l ON ST_Within(ST_Transform(loc.geom, 25833), l.geom)
+                WHERE l.lor_schluessel = :lor_schluessel
+                  AND pe.reported_at BETWEEN :start AND :end
+                GROUP BY 1
+                ORDER BY 1
+            """),
+            {"lor_schluessel": lor_schluessel, "start": start, "end": end},
+        )
+        lor_data = [{"date": row[0].strftime("%Y-%m-%d"), "avg_price": float(row[1])} for row in lor_result]
+
+    return {"berlin": berlin, "lor": lor_data}
+
+
+@router.get("/stats/price-changes")
+async def stats_price_changes(
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_moderator),
+):
+    result = await db.execute(
+        text("""
+            SELECT sub.id, sub.price, sub.prev_price, sub.reported_at, sub.user_id,
+                   sub.location_name, sub.drink_name, sub.username
+            FROM (
+                SELECT pe.id,
+                       pe.price,
+                       pe.reported_at,
+                       pe.user_id,
+                       LAG(pe.price) OVER (
+                           PARTITION BY pe.location_id, pe.drink_id
+                           ORDER BY pe.reported_at
+                       ) AS prev_price,
+                       loc.name AS location_name,
+                       d.name AS drink_name,
+                       u.username
+                FROM price_entries pe
+                JOIN locations loc ON pe.location_id = loc.id
+                JOIN drinks d ON pe.drink_id = d.id
+                LEFT JOIN users u ON pe.user_id = u.id
+            ) sub
+            WHERE sub.prev_price IS NOT NULL AND sub.price != sub.prev_price
+            ORDER BY sub.reported_at DESC
+            LIMIT :limit
+        """),
+        {"limit": limit},
+    )
+    rows = result.fetchall()
+    return [
+        {
+            "entry_id": row[0],
+            "new_price": float(row[1]),
+            "prev_price": float(row[2]),
+            "delta": float(row[1]) - float(row[2]),
+            "reported_at": row[3].isoformat() if row[3] else None,
+            "user_id": row[4],
+            "location_name": row[5],
+            "drink_name": row[6],
+            "username": row[7],
+        }
+        for row in rows
+    ]

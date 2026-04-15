@@ -98,4 +98,5 @@ Each service is a separate Coolify application backed by the shared PostgreSQL i
 
 ## Offene Aufgaben
 
-- 
+- [ ] Legende
+- [ ] Gebietsauswertungen

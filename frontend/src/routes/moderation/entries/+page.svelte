@@ -33,6 +33,8 @@
   let filterDateTo = $state('');
 
   let drinks = $state<Drink[]>([]);
+  let locationOptions = $state<string[]>([]);
+  let usernameOptions = $state<string[]>([]);
 
   // selection
   let selected = $state<Set<number>>(new Set());
@@ -62,8 +64,13 @@
   }
 
   onMount(async () => {
-    const drinksData = await api.get<Drink[]>('/drinks/').catch(() => []);
+    const [drinksData, filterData] = await Promise.all([
+      api.get<Drink[]>('/drinks/').catch(() => []),
+      api.get<{ locations: string[]; usernames: string[] }>('/moderation/filter-options').catch(() => ({ locations: [], usernames: [] })),
+    ]);
     drinks = drinksData;
+    locationOptions = filterData.locations;
+    usernameOptions = filterData.usernames;
     await load();
   });
 
@@ -137,14 +144,27 @@
       type="text"
       placeholder={$t.moderation.filter_location}
       bind:value={filterLocation}
+      list="location-options"
       class="filter-input"
     />
+    <datalist id="location-options">
+      {#each locationOptions as loc}
+        <option value={loc}></option>
+      {/each}
+    </datalist>
+
     <input
       type="text"
       placeholder={$t.moderation.filter_user}
       bind:value={filterUser}
+      list="username-options"
       class="filter-input"
     />
+    <datalist id="username-options">
+      {#each usernameOptions as u}
+        <option value={u}></option>
+      {/each}
+    </datalist>
     <label class="date-label">
       {$t.moderation.filter_date_from}
       <input type="date" bind:value={filterDateFrom} class="filter-input date-input" />
