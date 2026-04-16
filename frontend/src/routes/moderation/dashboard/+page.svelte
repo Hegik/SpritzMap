@@ -57,11 +57,11 @@
     loadingU = true; errU = '';
     loadingE = true; errE = '';
     await Promise.all([
-      api.get<UsersStats>(`/moderation/charts/users?${q}`)
+      api.get<UsersStats>(`/moderation/graph-users?${q}`)
         .then(d => { usersData = d; })
         .catch(e => { errU = e instanceof Error ? e.message : 'Fehler'; })
         .finally(() => { loadingU = false; }),
-      api.get<EntriesStats>(`/moderation/charts/entries?${q}`)
+      api.get<EntriesStats>(`/moderation/graph-entries?${q}`)
         .then(d => { entriesData = d; })
         .catch(e => { errE = e instanceof Error ? e.message : 'Fehler'; })
         .finally(() => { loadingE = false; }),
@@ -73,15 +73,15 @@
     const p = new URLSearchParams(baseQ ?? fParams());
     if (selLor) p.set('lor_schluessel', selLor);
     loadingP = true; errP = '';
-    try { pricesData = await api.get<PricesStats>(`/moderation/charts/prices?${p}`); }
+    try { pricesData = await api.get<PricesStats>(`/moderation/graph-prices?${p}`); }
     catch (e) { errP = e instanceof Error ? e.message : 'Fehler'; }
     finally { loadingP = false; }
   }
 
   onMount(async () => {
-    lors = await api.get<LOR[]>('/moderation/charts/lors').catch(() => []);
+    lors = await api.get<LOR[]>('/moderation/lors').catch(() => []);
     loadingC = true;
-    changes = await api.get<PriceChange[]>('/moderation/charts/price-changes?limit=20').catch(() => []);
+    changes = await api.get<PriceChange[]>('/moderation/price-feed?limit=20').catch(() => []);
     loadingC = false;
     loadAll();
   });

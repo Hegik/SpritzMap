@@ -264,7 +264,7 @@ def _time_window(granularity: str, year: int, month: int | None) -> tuple[dateti
 
 # ── new stats endpoints ───────────────────────────────────────────────────────
 
-@router.get("/charts/users")
+@router.get("/graph-users")
 async def stats_users(
     granularity: str = "month",
     year: int = 2026,
@@ -306,7 +306,7 @@ async def stats_users(
     return {"registrations": registrations, "deletions": deletions, "base_count": base_count}
 
 
-@router.get("/charts/entries")
+@router.get("/graph-entries")
 async def stats_entries(
     granularity: str = "month",
     year: int = 2026,
@@ -345,7 +345,7 @@ async def stats_entries(
     return {"drinks": drinks, "days": days}
 
 
-@router.get("/charts/lors")
+@router.get("/lors")
 async def stats_lors(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
@@ -356,7 +356,7 @@ async def stats_lors(
     return [{"lor_schluessel": row[0], "pr_name": row[1]} for row in result]
 
 
-@router.get("/charts/prices")
+@router.get("/graph-prices")
 async def stats_prices(
     granularity: str = "month",
     year: int = 2026,
@@ -400,7 +400,7 @@ async def stats_prices(
     return {"berlin": berlin, "lor": lor_data}
 
 
-@router.get("/charts/price-changes")
+@router.get("/price-feed")
 async def stats_price_changes(
     limit: int = 20,
     db: AsyncSession = Depends(get_db),
