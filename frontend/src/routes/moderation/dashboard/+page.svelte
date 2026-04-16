@@ -25,16 +25,16 @@
   ];
 
   let granularity = $state<'year' | 'month'>('month');
-  let selYear = $state(NOW.getFullYear());
+  let selYear  = $state(NOW.getFullYear());
   let selMonth = $state(NOW.getMonth() + 1);
 
-  // ── data ──────────────────────────────────────────────────────────────────
-  let usersData  = $state<UsersStats | null>(null);
+  // ── data state ────────────────────────────────────────────────────────────
+  let usersData   = $state<UsersStats | null>(null);
   let entriesData = $state<EntriesStats | null>(null);
-  let pricesData = $state<PricesStats | null>(null);
-  let lors       = $state<LOR[]>([]);
-  let changes    = $state<PriceChange[]>([]);
-  let selLor     = $state('');
+  let pricesData  = $state<PricesStats | null>(null);
+  let lors        = $state<LOR[]>([]);
+  let changes     = $state<PriceChange[]>([]);
+  let selLor      = $state('');
 
   let loadingU = $state(false); let errU = $state('');
   let loadingE = $state(false); let errE = $state('');
@@ -45,7 +45,150 @@
   let expandedId = $state<number | null>(null);
   let actionErr  = $state('');
 
-  // ── helpers ───────────────────────────────────────────────────────────────
+  // ── ApexCharts ────────────────────────────────────────────────────────────
+  let Apex: any;
+  let apexLoaded = $state(false);
+  let el1 = $state<HTMLDivElement | undefined>(undefined);
+  let el2 = $state<HTMLDivElement | undefined>(undefined);
+  let el3 = $state<HTMLDivElement | undefined>(undefined);
+
+  // "YYYY-MM-DD" → UTC timestamp
+  const ts = (d: string) => new Date(d + 'T00:00:00Z').getTime();
+
+  function buildUserDays(data: UsersStats) {
+    const regMap = Object.fromEntries(data.registrations.map(r => [r.date, r.count]));
+    const delMap = Object.fromEntries(data.deletions.map(d => [d.date, d.count]));
+    const allDates = [...new Set([
+      ...data.registrations.map(r => r.date),
+      ...data.deletions.map(d => d.date),
+    ])].sort();
+    if (!allDates.length) return [];
+    const days: { date: string; reg: number; del: number }[] = [];
+    const cur = new Date(allDates[0] + 'T00:00:00Z');
+    const end = new Date(allDates.at(-1)! + 'T00:00:00Z');
+    while (cur <= end) {
+      const d = cur.toISOString().slice(0, 10);
+      days.push({ date: d, reg: regMap[d] ?? 0, del: delMap[d] ?? 0 });
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return days;
+  }
+
+  const baseChart = (extra: object) => ({
+    fontFamily: 'inherit',
+    toolbar: { show: false },
+    animations: { enabled: true, speed: 350, animateGradually: { enabled: false } },
+    ...extra,
+  });
+  const xDateAxis = {
+    type: 'datetime' as const,
+    labels: { datetimeUTC: true, format: 'dd.MM' },
+    axisBorder: { show: false },
+    axisTicks: { show: false },
+  };
+  const gridOpts = { strokeDashArray: 4, borderColor: '#f0f0f0', xaxis: { lines: { show: false } } };
+  const ttBase   = { theme: 'light' as const, x: { format: 'dd.MM.yyyy' } };
+
+  // ── Chart 1 — Nutzerentwicklung ───────────────────────────────────────────
+  $effect(() => {
+    if (!apexLoaded || !el1 || !usersData) return;
+    const data = usersData;
+    const mode = chart1Mode;
+    const days = buildUserDays(data);
+    if (!days.length) return;
+
+    let opts: object;
+    if (mode === 'activity') {
+      opts = {
+        chart: baseChart({ type: 'bar', height: 240 }),
+        series: [
+          { name: 'Registrierungen', data: days.map(d => [ts(d.date), d.reg]) },
+          { name: 'Löschungen',      data: days.map(d => [ts(d.date), -d.del]) },
+        ],
+        colors: ['#43a047', '#e53935'],
+        dataLabels: { enabled: false },
+        plotOptions: { bar: { borderRadius: 2, columnWidth: '70%' } },
+        xaxis: xDateAxis,
+        yaxis: { labels: { formatter: (v: number) => String(Math.abs(Math.round(v))) } },
+        tooltip: { ...ttBase, y: { formatter: (v: number) => String(Math.abs(Math.round(v))) } },
+        grid: gridOpts,
+        legend: { position: 'top' as const, fontSize: '12px', fontWeight: 400 },
+      };
+    } else {
+      let cum = data.base_count;
+      const cumData = days.map(d => { cum += d.reg - d.del; return [ts(d.date), cum]; });
+      opts = {
+        chart: baseChart({ type: 'area', height: 240 }),
+        series: [{ name: 'Nutzer gesamt', data: cumData }],
+        colors: ['#e8500a'],
+        dataLabels: { enabled: false },
+        stroke: { curve: 'smooth' as const, width: 2 },
+        fill: { type: 'gradient', gradient: { opacityFrom: 0.25, opacityTo: 0.02 } },
+        xaxis: xDateAxis,
+        tooltip: ttBase,
+        grid: gridOpts,
+        legend: { show: false },
+      };
+    }
+
+    const chart = new Apex(el1, opts);
+    chart.render();
+    return () => chart.destroy();
+  });
+
+  // ── Chart 2 — Einträge pro Tag ────────────────────────────────────────────
+  $effect(() => {
+    if (!apexLoaded || !el2 || !entriesData || !entriesData.days.length) return;
+    const { drinks, days } = entriesData;
+
+    const chart = new Apex(el2, {
+      chart: baseChart({ type: 'bar', stacked: true, height: 240 }),
+      series: drinks.map(dr => ({
+        name: dr.name,
+        data: days.map(d => [ts(d.date), d.counts[String(dr.id)] ?? 0]),
+      })),
+      colors: drinks.map(dr => dr.color_hex),
+      dataLabels: { enabled: false },
+      plotOptions: { bar: { borderRadius: 0, columnWidth: '80%' } },
+      xaxis: xDateAxis,
+      tooltip: { ...ttBase, shared: true },
+      grid: gridOpts,
+      legend: { position: 'top' as const, fontSize: '12px', fontWeight: 400 },
+    });
+    chart.render();
+    return () => chart.destroy();
+  });
+
+  // ── Chart 3 — Durchschnittspreise ─────────────────────────────────────────
+  $effect(() => {
+    if (!apexLoaded || !el3 || !pricesData || !pricesData.berlin.length) return;
+    const { berlin, lor } = pricesData;
+    const lorName = lors.find(l => l.lor_schluessel === selLor)?.pr_name ?? 'LOR';
+    const series: { name: string; data: [number, number][] }[] = [
+      { name: 'Berlin gesamt', data: berlin.map(p => [ts(p.date), +p.avg_price.toFixed(2)]) },
+    ];
+    if (selLor && lor.length) {
+      series.push({ name: lorName, data: lor.map(p => [ts(p.date), +p.avg_price.toFixed(2)]) });
+    }
+
+    const chart = new Apex(el3, {
+      chart: baseChart({ type: 'line', height: 240 }),
+      series,
+      colors: selLor ? ['#aaa', '#e8500a'] : ['#e8500a'],
+      dataLabels: { enabled: false },
+      stroke: { curve: 'smooth' as const, width: 2 },
+      markers: { size: 4, hover: { size: 6 } },
+      xaxis: xDateAxis,
+      yaxis: { labels: { formatter: (v: number) => v.toFixed(2) + ' €' } },
+      tooltip: { ...ttBase, y: { formatter: (v: number) => v.toFixed(2) + ' €' } },
+      grid: gridOpts,
+      legend: { show: series.length > 1, position: 'top' as const, fontSize: '12px', fontWeight: 400 },
+    });
+    chart.render();
+    return () => chart.destroy();
+  });
+
+  // ── load functions ────────────────────────────────────────────────────────
   function fParams() {
     const p = new URLSearchParams({ granularity, year: String(selYear) });
     if (granularity === 'month') p.set('month', String(selMonth));
@@ -54,8 +197,8 @@
 
   async function loadAll() {
     const q = fParams();
-    loadingU = true; errU = '';
-    loadingE = true; errE = '';
+    usersData = null; errU = ''; loadingU = true;
+    entriesData = null; errE = ''; loadingE = true;
     await Promise.all([
       api.get<UsersStats>(`/moderation/graph-users?${q}`)
         .then(d => { usersData = d; })
@@ -72,13 +215,16 @@
   async function loadPrices(baseQ?: string) {
     const p = new URLSearchParams(baseQ ?? fParams());
     if (selLor) p.set('lor_schluessel', selLor);
-    loadingP = true; errP = '';
+    pricesData = null; errP = ''; loadingP = true;
     try { pricesData = await api.get<PricesStats>(`/moderation/graph-prices?${p}`); }
     catch (e) { errP = e instanceof Error ? e.message : 'Fehler'; }
     finally { loadingP = false; }
   }
 
   onMount(async () => {
+    const m = await import('apexcharts');
+    Apex = m.default;
+    apexLoaded = true;
     lors = await api.get<LOR[]>('/moderation/lors').catch(() => []);
     loadingC = true;
     changes = await api.get<PriceChange[]>('/moderation/price-feed?limit=20').catch(() => []);
@@ -86,127 +232,7 @@
     loadAll();
   });
 
-  // ── SVG layout constants ──────────────────────────────────────────────────
-  const W = 500; const H = 170;
-  const PL = 42; const PT = 8; const PB = 22;
-  const CW = W - PL;
-  const CH = H - PT - PB;
-
-  // ── Chart 1 ───────────────────────────────────────────────────────────────
-  const c1 = $derived.by(() => {
-    if (!usersData) return null;
-    const { registrations, deletions, base_count } = usersData;
-    const regMap = Object.fromEntries(registrations.map(r => [r.date, r.count]));
-    const delMap = Object.fromEntries(deletions.map(d => [d.date, d.count]));
-
-    const allDates = [
-      ...registrations.map(r => r.date),
-      ...deletions.map(d => d.date),
-    ].sort();
-    if (!allDates.length) return { days: [] as ReturnType<typeof buildDays>, actBars: [], cumPts: [], cumLine: '', zeroY: 0, yLabels: [] };
-
-    function buildDays() {
-      const days: { date: string; reg: number; del: number; cum: number }[] = [];
-      let cum = base_count;
-      const cur = new Date(allDates[0] + 'T00:00:00Z');
-      const end = new Date(allDates[allDates.length - 1] + 'T00:00:00Z');
-      while (cur <= end) {
-        const d = cur.toISOString().slice(0, 10);
-        const reg = regMap[d] ?? 0;
-        const del = delMap[d] ?? 0;
-        cum += reg - del;
-        days.push({ date: d, reg, del, cum });
-        cur.setUTCDate(cur.getUTCDate() + 1);
-      }
-      return days;
-    }
-
-    const days = buildDays();
-    const n = days.length;
-    const maxVal = Math.max(...days.map(d => Math.max(d.reg, d.del)), 1);
-    const minCum = Math.min(...days.map(d => d.cum));
-    const maxCum = Math.max(...days.map(d => d.cum), minCum + 1);
-    const cumRng = maxCum - minCum;
-    const bw = Math.max(1.5, CW / n - 0.5);
-    const xOf = (i: number) => PL + i * (CW / n);
-    const zeroY = PT + CH / 2;
-
-    const actBars = days.map((d, i) => ({
-      x: xOf(i), bw,
-      regY: zeroY - (d.reg / maxVal) * (CH / 2),
-      regH: (d.reg / maxVal) * (CH / 2),
-      delH: (d.del / maxVal) * (CH / 2),
-      date: d.date, reg: d.reg, del: d.del,
-    }));
-
-    const cumPts = days.map((d, i) => ({
-      x: n > 1 ? PL + (i / (n - 1)) * CW : PL + CW / 2,
-      y: PT + (1 - (d.cum - minCum) / cumRng) * CH,
-      date: d.date, count: d.cum,
-    }));
-
-    const yLabels = [
-      { v: maxCum, y: PT + 4 },
-      { v: Math.round((maxCum + minCum) / 2), y: PT + CH / 2 + 4 },
-      { v: minCum, y: PT + CH + 2 },
-    ];
-
-    return {
-      days, actBars, zeroY, yLabels,
-      cumPts, cumLine: cumPts.map(p => `${p.x},${p.y}`).join(' '),
-    };
-  });
-
-  // ── Chart 2 ───────────────────────────────────────────────────────────────
-  const c2 = $derived.by(() => {
-    if (!entriesData || !entriesData.days.length) return null;
-    const { drinks, days } = entriesData;
-    const maxTotal = Math.max(...days.map(d => Object.values(d.counts).reduce((a, b) => a + b, 0)), 1);
-    const n = days.length;
-    const bw = Math.max(1.5, CW / n - 0.5);
-    const bars = days.map((day, i) => {
-      const x = PL + i * (CW / n);
-      let yOff = PT + CH;
-      const segs = drinks
-        .filter(dr => (day.counts[String(dr.id)] ?? 0) > 0)
-        .map(dr => {
-          const cnt = day.counts[String(dr.id)];
-          const h = (cnt / maxTotal) * CH;
-          yOff -= h;
-          return { y: yOff, h, color: dr.color_hex, name: dr.name, cnt };
-        });
-      const total = Object.values(day.counts).reduce((a, b) => a + b, 0);
-      return { x, bw, segs, date: day.date, total };
-    });
-    return { bars, drinks, maxTotal };
-  });
-
-  // ── Chart 3 ───────────────────────────────────────────────────────────────
-  const c3 = $derived.by(() => {
-    if (!pricesData || !pricesData.berlin.length) return null;
-    const { berlin, lor } = pricesData;
-    const allP = [...berlin.map(p => p.avg_price), ...lor.map(p => p.avg_price)];
-    const minP = Math.min(...allP) * 0.95;
-    const maxP = Math.max(...allP) * 1.05;
-    const rng = maxP - minP || 1;
-    const allDates = [...new Set([...berlin.map(p => p.date), ...lor.map(p => p.date)])].sort();
-    const n = allDates.length;
-    if (!n) return null;
-    const xOf = (i: number) => n > 1 ? PL + (i / (n - 1)) * CW : PL + CW / 2;
-    const yOf = (p: number) => PT + (1 - (p - minP) / rng) * CH;
-    const bMap = Object.fromEntries(berlin.map(p => [p.date, p.avg_price]));
-    const lMap = Object.fromEntries(lor.map(p => [p.date, p.avg_price]));
-    type Pt = { x: number; y: number; p: number; date: string };
-    const bPts = allDates.map((d, i) => bMap[d] != null ? { x: xOf(i), y: yOf(bMap[d]), p: bMap[d], date: d } : null).filter(Boolean) as Pt[];
-    const lPts = allDates.map((d, i) => lMap[d] != null ? { x: xOf(i), y: yOf(lMap[d]), p: lMap[d], date: d } : null).filter(Boolean) as Pt[];
-    const yLbls = [maxP, (maxP + minP) / 2, minP].map(v => ({ v: v.toFixed(2), y: yOf(v) }));
-    const xLbls = n > 1
-      ? [0, Math.floor((n - 1) / 2), n - 1].map(i => ({ l: allDates[i].slice(5), x: xOf(i) }))
-      : [{ l: allDates[0].slice(5), x: xOf(0) }];
-    return { bPts, lPts, bLine: bPts.map(p => `${p.x},${p.y}`).join(' '), lLine: lPts.map(p => `${p.x},${p.y}`).join(' '), yLbls, xLbls };
-  });
-
-  // ── Widget 4 ──────────────────────────────────────────────────────────────
+  // ── Widget 4 actions ──────────────────────────────────────────────────────
   async function deleteEntry(id: number) {
     actionErr = '';
     try {
@@ -265,56 +291,18 @@
       <div class="chart-header">
         <span class="chart-title">Nutzerentwicklung</span>
         <div class="toggle-grp">
-          <button class="tog" class:tog-active={chart1Mode === 'activity'} onclick={() => chart1Mode = 'activity'}>Aktivität</button>
+          <button class="tog" class:tog-active={chart1Mode === 'activity'}   onclick={() => chart1Mode = 'activity'}>Aktivität</button>
           <button class="tog" class:tog-active={chart1Mode === 'cumulative'} onclick={() => chart1Mode = 'cumulative'}>Kumuliert</button>
         </div>
       </div>
       {#if errU}
         <p class="cerr">{errU}</p>
       {:else if loadingU}
-        <p class="cload">Lade…</p>
-      {:else if !c1 || !c1.days.length}
+        <div class="chart-skeleton"></div>
+      {:else if !usersData}
         <p class="cempty">Keine Daten im gewählten Zeitraum</p>
       {:else}
-        <svg viewBox="0 0 {W} {H}" class="svg">
-          <!-- y-axis labels -->
-          {#each c1.yLabels as lbl}
-            <text x={PL - 4} y={lbl.y} text-anchor="end" font-size="10" fill="#aaa">{lbl.v}</text>
-          {/each}
-          <!-- baseline -->
-          <line x1={PL} y1={PT + CH} x2={W} y2={PT + CH} stroke="#e0e0e0" stroke-width="1" />
-
-          {#if chart1Mode === 'activity'}
-            <line x1={PL} y1={c1.zeroY} x2={W} y2={c1.zeroY} stroke="#ddd" stroke-width="1" stroke-dasharray="4,3" />
-            {#each c1.actBars as b}
-              {#if b.regH > 0.5}
-                <rect x={b.x} y={b.regY} width={b.bw} height={b.regH} fill="#43a047" opacity="0.8">
-                  <title>{b.date}: +{b.reg} Registrierungen</title>
-                </rect>
-              {/if}
-              {#if b.delH > 0.5}
-                <rect x={b.x} y={c1.zeroY} width={b.bw} height={b.delH} fill="#e53935" opacity="0.8">
-                  <title>{b.date}: -{b.del} Löschungen</title>
-                </rect>
-              {/if}
-            {/each}
-          {:else}
-            {#if c1.cumPts.length > 1}
-              <polyline points={c1.cumLine} fill="none" stroke="#e8500a" stroke-width="2" stroke-linejoin="round" />
-            {/if}
-            {#each c1.cumPts as p}
-              <circle cx={p.x} cy={p.y} r="2" fill="#e8500a">
-                <title>{p.date}: {p.count}</title>
-              </circle>
-            {/each}
-          {/if}
-        </svg>
-        {#if chart1Mode === 'activity'}
-          <div class="legend">
-            <span class="l-dot" style="background:#43a047"></span><span class="l-lbl">Registrierungen</span>
-            <span class="l-dot" style="background:#e53935"></span><span class="l-lbl">Löschungen</span>
-          </div>
-        {/if}
+        <div bind:this={el1}></div>
       {/if}
     </div>
 
@@ -326,27 +314,11 @@
       {#if errE}
         <p class="cerr">{errE}</p>
       {:else if loadingE}
-        <p class="cload">Lade…</p>
-      {:else if !c2}
+        <div class="chart-skeleton"></div>
+      {:else if !entriesData || !entriesData.days.length}
         <p class="cempty">Keine Daten im gewählten Zeitraum</p>
       {:else}
-        <svg viewBox="0 0 {W} {H}" class="svg">
-          <text x={PL - 4} y={PT + 10} text-anchor="end" font-size="10" fill="#aaa">{c2.maxTotal}</text>
-          <line x1={PL} y1={PT + CH} x2={W} y2={PT + CH} stroke="#e0e0e0" stroke-width="1" />
-          {#each c2.bars as b}
-            {#each b.segs as s}
-              <rect x={b.x} y={s.y} width={b.bw} height={s.h} fill={s.color} opacity="0.85">
-                <title>{b.date} · {s.name}: {s.cnt}</title>
-              </rect>
-            {/each}
-          {/each}
-        </svg>
-        <div class="legend">
-          {#each c2.drinks as dr}
-            <span class="l-dot" style="background:{dr.color_hex}"></span>
-            <span class="l-lbl">{dr.name}</span>
-          {/each}
-        </div>
+        <div bind:this={el2}></div>
       {/if}
     </div>
 
@@ -364,42 +336,11 @@
       {#if errP}
         <p class="cerr">{errP}</p>
       {:else if loadingP}
-        <p class="cload">Lade…</p>
-      {:else if !c3}
+        <div class="chart-skeleton"></div>
+      {:else if !pricesData || !pricesData.berlin.length}
         <p class="cempty">Keine Daten im gewählten Zeitraum</p>
       {:else}
-        <svg viewBox="0 0 {W} {H}" class="svg">
-          {#each c3.yLbls as lbl}
-            <line x1={PL} y1={lbl.y} x2={W} y2={lbl.y} stroke="#f0f0f0" stroke-width="1" />
-            <text x={PL - 4} y={lbl.y + 4} text-anchor="end" font-size="10" fill="#aaa">{lbl.v}</text>
-          {/each}
-          {#each c3.xLbls as lbl}
-            <text x={lbl.x} y={H - 4} text-anchor="middle" font-size="10" fill="#bbb">{lbl.l}</text>
-          {/each}
-          {#if c3.bLine}
-            <polyline points={c3.bLine} fill="none" stroke="#bbb" stroke-width="2" stroke-linejoin="round" />
-          {/if}
-          {#each c3.bPts as p}
-            <circle cx={p.x} cy={p.y} r="2.5" fill="#bbb">
-              <title>Berlin {p.date}: {p.p.toFixed(2)} €</title>
-            </circle>
-          {/each}
-          {#if c3.lLine && selLor}
-            <polyline points={c3.lLine} fill="none" stroke="#e8500a" stroke-width="2" stroke-linejoin="round" />
-            {#each c3.lPts as p}
-              <circle cx={p.x} cy={p.y} r="2.5" fill="#e8500a">
-                <title>LOR {p.date}: {p.p.toFixed(2)} €</title>
-              </circle>
-            {/each}
-          {/if}
-        </svg>
-        <div class="legend">
-          <span class="l-dot" style="background:#bbb"></span><span class="l-lbl">Berlin gesamt</span>
-          {#if selLor}
-            <span class="l-dot" style="background:#e8500a"></span>
-            <span class="l-lbl">{lors.find(l => l.lor_schluessel === selLor)?.pr_name ?? 'LOR'}</span>
-          {/if}
-        </div>
+        <div bind:this={el3}></div>
       {/if}
     </div>
 
@@ -412,7 +353,7 @@
         <p class="cerr">{actionErr}</p>
       {/if}
       {#if loadingC}
-        <p class="cload">Lade…</p>
+        <div class="chart-skeleton"></div>
       {:else if !changes.length}
         <p class="cempty">Keine Preisänderungen gefunden</p>
       {:else}
@@ -471,7 +412,6 @@
 
   .radio-group {
     display: flex;
-    gap: 0;
     border: 1px solid #ddd;
     border-radius: 6px;
     overflow: hidden;
@@ -561,28 +501,18 @@
   }
   .tog-active { background: #1a1a2e; color: white; }
 
-  /* SVG */
-  .svg {
-    width: 100%;
-    height: auto;
-    display: block;
+  /* Skeleton loader */
+  .chart-skeleton {
+    height: 240px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, #f5f5f5 25%, #ebebeb 50%, #f5f5f5 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s infinite;
   }
-
-  /* Legend */
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem 0.75rem;
-    margin-top: 0.4rem;
-    align-items: center;
+  @keyframes shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
-  .l-dot {
-    display: inline-block;
-    width: 10px; height: 10px;
-    border-radius: 50%;
-    flex-shrink: 0;
-  }
-  .l-lbl { font-size: 0.78rem; color: #666; }
 
   /* Feed */
   .feed-box { display: flex; flex-direction: column; }
@@ -592,9 +522,7 @@
     overflow-y: auto;
     max-height: 280px;
   }
-  .feed-item {
-    border-bottom: 1px solid #f0f0f0;
-  }
+  .feed-item { border-bottom: 1px solid #f0f0f0; }
   .feed-item:last-child { border-bottom: none; }
   .feed-item.expanded { background: #fafafa; }
 
@@ -618,7 +546,7 @@
     min-width: 70px;
     padding-top: 1px;
   }
-  .delta-up { color: #43a047; }
+  .delta-up   { color: #43a047; }
   .delta-down { color: #e53935; }
 
   .feed-info {
@@ -643,16 +571,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .feed-chevron {
-    font-size: 0.65rem;
-    color: #bbb;
-    padding-top: 3px;
-  }
+  .feed-chevron { font-size: 0.65rem; color: #bbb; padding-top: 3px; }
 
   .feed-actions {
     display: flex;
     gap: 0.5rem;
-    padding: 0.4rem 0.25rem 0.5rem 0.25rem;
+    padding: 0.4rem 0.25rem 0.5rem;
   }
   .btn-danger-sm {
     padding: 0.3rem 0.7rem;
@@ -680,6 +604,5 @@
 
   /* States */
   .cerr   { color: #c00; font-size: 0.82rem; padding: 0.5rem 0; }
-  .cload  { color: #aaa; font-size: 0.82rem; padding: 0.5rem 0; }
   .cempty { color: #aaa; font-size: 0.82rem; padding: 0.5rem 0; }
 </style>

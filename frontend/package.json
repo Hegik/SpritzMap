@@ -22,6 +22,7 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-node": "^5.5.4",
+		"apexcharts": "^5.10.6",
 		"maplibre-gl": "^5.23.0",
 		"marked": "^18.0.0"
 	}
