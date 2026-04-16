@@ -16,7 +16,6 @@ class Settings(BaseSettings):
     PRICE_TIER_2_MAX: float = 8.50
 
     # OSM Sync
-    OSM_BBOX_BERLIN: str = "52.3382,13.0883,52.6755,13.7611"
     OSM_SYNC_INTERVAL_HOURS: int = 24
 
     # Color averaging

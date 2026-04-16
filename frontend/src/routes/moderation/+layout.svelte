@@ -17,7 +17,10 @@
     { href: '/moderation/dashboard', label: $t.moderation.nav_dashboard, icon: '📊' },
     { href: '/moderation/entries',   label: $t.moderation.nav_entries,   icon: '📋' },
     ...($user?.role === 'admin'
-      ? [{ href: '/moderation/users', label: $t.moderation.nav_users, icon: '👥' }]
+      ? [
+          { href: '/moderation/users', label: $t.moderation.nav_users, icon: '👥' },
+          { href: '/moderation/cities', label: 'Städte', icon: '🏙️' },
+        ]
       : []),
   ]);
 

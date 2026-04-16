@@ -1,19 +1,21 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { drinks, selectedDrinkId, selectedPriceTier } from '$lib/stores/map';
+  import { drinks, selectedDrinkId, selectedPriceTier, cities, selectedCity } from '$lib/stores/map';
   import { getGlassIconDataUrl, getEmptyGlassDataUrl, getNodataGlassDataUrl, buildIconHtml } from '$lib/utils/markerIcon';
   import PriceSubmitModal from '$lib/components/PriceSubmitModal.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
   import { isLoggedIn } from '$lib/stores/auth';
   import { t } from '$lib/i18n';
   import type { Map, Popup, GeoJSONSource } from 'maplibre-gl';
+  import type { CityMeta } from '$lib/stores/map';
 
   let mapEl: HTMLDivElement;
   let map: Map;
   let popup: Popup;
 
   export function reloadMarkers() {
-    loadMarkers($selectedDrinkId, $selectedPriceTier);
+    const city = $selectedCity;
+    if (city) loadMarkers(city, $selectedDrinkId, $selectedPriceTier);
   }
 
   let submitOpen = $state(false);
@@ -52,17 +54,17 @@
     });
   }
 
-  async function loadMarkers(drinkId: number | null, priceTier: string | null) {
+  async function loadMarkers(city: CityMeta, drinkId: number | null, priceTier: string | null) {
     if (!map) return;
 
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({ city_id: String(city.id) });
     if (drinkId) params.set('drink_id', String(drinkId));
     if (priceTier) params.set('price_tier', priceTier);
 
     const [res, nodataRes, emptyRes] = await Promise.all([
       fetch(`${API_URL}/locations/geojson?${params}`),
-      drinkId ? fetch(`${API_URL}/locations/geojson/nodata?drink_id=${drinkId}`) : null,
-      drinkId ? null : fetch(`${API_URL}/locations/geojson/empty`),
+      drinkId ? fetch(`${API_URL}/locations/geojson/nodata?city_id=${city.id}&drink_id=${drinkId}`) : null,
+      drinkId ? null : fetch(`${API_URL}/locations/geojson/empty?city_id=${city.id}`),
     ]);
 
     if (!res.ok) return;
@@ -196,13 +198,21 @@
     }
   }
 
-  function updateWmsLayer(drinkId: number | null) {
-    const url = `${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:4326&STYLES=`;
-    const source = map.getSource('wms-lor') as GeoJSONSource | undefined;
-    if (source) {
-      (map.getSource('wms-lor') as any).tiles = [url + '&BBOX={bbox-epsg-3857}'];
-      map.triggerRepaint();
+  function buildWmsUrl(drinkId: number | null): string {
+    return `${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`;
+  }
+
+  function applyCity(city: CityMeta) {
+    // Fly to new city center
+    map.flyTo({ center: [city.center_lon, city.center_lat], zoom: city.default_zoom });
+
+    // Show/hide WMS layer based on city support
+    const hasWms = city.wms_layer != null;
+    if (map.getLayer('wms-lor')) {
+      map.setLayoutProperty('wms-lor', 'visibility', hasWms ? 'visible' : 'none');
     }
+
+    loadMarkers(city, $selectedDrinkId, $selectedPriceTier);
   }
 
   function buildOtherDrinksHtml(
@@ -269,10 +279,26 @@
   onMount(() => {
     let unsubDrink: (() => void) | undefined;
     let unsubTier: (() => void) | undefined;
+    let unsubCity: (() => void) | undefined;
 
     (async () => {
+    // Load cities before map init
+    const citiesRes = await fetch(`${API_URL}/cities/`).catch(() => null);
+    if (citiesRes?.ok) {
+      const cityList = await citiesRes.json();
+      cities.set(cityList);
+      if (cityList.length > 0) selectedCity.set(cityList[0]);
+    }
+
+    const initialCity = $selectedCity;
+
     const maplibre = await import('maplibre-gl');
     await import('maplibre-gl/dist/maplibre-gl.css');
+
+    const centerLon = initialCity?.center_lon ?? 13.405;
+    const centerLat = initialCity?.center_lat ?? 52.52;
+    const zoom = initialCity?.default_zoom ?? 12;
+    const hasWms = initialCity?.wms_layer != null;
 
     map = new maplibre.Map({
       container: mapEl,
@@ -290,20 +316,25 @@
           },
           'wms-lor': {
             type: 'raster',
-            tiles: [
-              `${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${$selectedDrinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`,
-            ],
+            tiles: [buildWmsUrl($selectedDrinkId)],
             tileSize: 256,
           },
         },
         layers: [
           { id: 'basemap', type: 'raster', source: 'basemap', paint: { 'raster-opacity': 0.5 } },
-          { id: 'wms-lor', type: 'raster', source: 'wms-lor', paint: { 'raster-opacity': 1 },
-            minzoom: 0, maxzoom: 15 },
+          {
+            id: 'wms-lor',
+            type: 'raster',
+            source: 'wms-lor',
+            paint: { 'raster-opacity': 1 },
+            minzoom: 0,
+            maxzoom: 15,
+            layout: { visibility: hasWms ? 'visible' : 'none' },
+          },
         ],
       },
-      center: [13.405, 52.52],
-      zoom: 12,
+      center: [centerLon, centerLat],
+      zoom,
     });
 
     popup = new maplibre.Popup({ closeButton: true, maxWidth: '280px' });
@@ -330,20 +361,23 @@
       );
 
       // Initial load
-      await loadMarkers($selectedDrinkId, $selectedPriceTier);
+      if (initialCity) {
+        await loadMarkers(initialCity, $selectedDrinkId, $selectedPriceTier);
+      }
 
       // Subscribe after map is ready — first call fires immediately with current value
       const updateWms = (drinkId: number | null) => {
         const src = map.getSource('wms-lor') as any;
         if (src?.setTiles) {
-          src.setTiles([`${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`]);
+          src.setTiles([buildWmsUrl(drinkId)]);
         }
       };
 
       let firstDrink = true;
       unsubDrink = selectedDrinkId.subscribe((drinkId) => {
         if (firstDrink) { firstDrink = false; return; }
-        loadMarkers(drinkId, $selectedPriceTier);
+        const city = $selectedCity;
+        if (city) loadMarkers(city, drinkId, $selectedPriceTier);
         updateWms(drinkId);
         updateBasemapTint(drinkId);
       });
@@ -351,7 +385,14 @@
       let firstTier = true;
       unsubTier = selectedPriceTier.subscribe((tier) => {
         if (firstTier) { firstTier = false; return; }
-        loadMarkers($selectedDrinkId, tier);
+        const city = $selectedCity;
+        if (city) loadMarkers(city, $selectedDrinkId, tier);
+      });
+
+      let firstCity = true;
+      unsubCity = selectedCity.subscribe((city) => {
+        if (firstCity) { firstCity = false; return; }
+        if (city) applyCity(city);
       });
     });
     })();
@@ -359,6 +400,7 @@
     return () => {
       unsubDrink?.();
       unsubTier?.();
+      unsubCity?.();
     };
   });
 
@@ -368,6 +410,21 @@
 </script>
 
 <div bind:this={mapEl} class="map-container"></div>
+
+<!-- City picker pills -->
+{#if $cities.length > 1}
+  <div class="city-picker">
+    {#each $cities as city}
+      <button
+        class="city-btn"
+        class:active={$selectedCity?.id === city.id}
+        onclick={() => selectedCity.set(city)}
+      >
+        {city.name}
+      </button>
+    {/each}
+  </div>
+{/if}
 
 <div class="zoom-btns">
   <button class="zoom-btn" title="Vergrößern" onclick={() => map?.zoomIn()}>+</button>
@@ -402,13 +459,42 @@
   locationId={submitLocationId}
   locationName={submitLocationName}
   isEmptyLocation={submitIsEmpty}
-  onsubmitted={() => loadMarkers($selectedDrinkId, $selectedPriceTier)}
+  onsubmitted={() => { const city = $selectedCity; if (city) loadMarkers(city, $selectedDrinkId, $selectedPriceTier); }}
 />
 
 <style>
   .map-container {
     width: 100%;
     height: 100%;
+  }
+
+  .city-picker {
+    position: absolute;
+    top: 0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 5;
+    display: flex;
+    gap: 6px;
+  }
+
+  .city-btn {
+    padding: 5px 14px;
+    border: 2px solid #e8500a;
+    border-radius: 20px;
+    background: white;
+    color: #e8500a;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+  }
+
+  .city-btn.active,
+  .city-btn:hover {
+    background: #e8500a;
+    color: white;
   }
 
   .locate-btn,

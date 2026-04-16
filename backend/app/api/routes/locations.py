@@ -16,6 +16,7 @@ router = APIRouter(prefix="/locations", tags=["locations"])
 
 @router.get("/geojson")
 async def get_locations_geojson(
+    city_id: int = Query(...),
     drink_id: int | None = Query(None),
     price_tier: str | None = Query(None, pattern="^(€|€€|€€€)$"),
     db: AsyncSession = Depends(get_db),
@@ -79,6 +80,7 @@ async def get_locations_geojson(
         )
         .where(Location.is_active == True)
         .where(Location.no_spritz == False)
+        .where(Location.city_id == city_id)
     )
 
     if drink_id:
@@ -119,6 +121,7 @@ async def get_locations_geojson(
 
 @router.get("/geojson/nodata")
 async def get_nodata_locations_geojson(
+    city_id: int = Query(...),
     drink_id: int = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
@@ -138,6 +141,7 @@ async def get_nodata_locations_geojson(
         )
         .where(Location.is_active == True)
         .where(Location.no_spritz == False)
+        .where(Location.city_id == city_id)
         .where(Location.id.not_in(has_entry_sq))
     )
 
@@ -215,7 +219,10 @@ async def mark_no_spritz(
 
 
 @router.get("/geojson/empty")
-async def get_empty_locations_geojson(db: AsyncSession = Depends(get_db)):
+async def get_empty_locations_geojson(
+    city_id: int = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
     """Returns active locations that have no current price entries."""
     query = (
         select(
@@ -229,6 +236,7 @@ async def get_empty_locations_geojson(db: AsyncSession = Depends(get_db)):
         )
         .where(Location.is_active == True)
         .where(Location.no_spritz == False)
+        .where(Location.city_id == city_id)
         .where(PriceEntry.id == None)
     )
 

@@ -9,8 +9,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.database import Base
-from app.api.routes import auth, locations, prices, drinks, moderation, admin
-from app.services.osm_sync import sync_osm_locations
+from app.api.routes import auth, locations, prices, drinks, moderation, admin, cities
+from app.services.osm_sync import sync_all_cities
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +22,7 @@ scheduler = AsyncIOScheduler()
 async def scheduled_osm_sync():
     async with AsyncSessionLocal() as db:
         try:
-            await sync_osm_locations(db)
+            await sync_all_cities(db)
         except Exception as e:
             logger.warning("OSM sync failed: %s", e)
 
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
     # Initial OSM sync — non-blocking, server starts even if Overpass is unavailable
     async with AsyncSessionLocal() as db:
         try:
-            await sync_osm_locations(db)
+            await sync_all_cities(db)
         except Exception as e:
             logger.warning("Initial OSM sync failed (will retry on schedule): %s", e)
 
@@ -78,6 +78,7 @@ app.include_router(prices.router)
 app.include_router(drinks.router)
 app.include_router(moderation.router)
 app.include_router(admin.router)
+app.include_router(cities.router)
 
 
 @app.get("/health")

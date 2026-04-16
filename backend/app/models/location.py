@@ -1,4 +1,4 @@
-from sqlalchemy import String, Float, Boolean, BigInteger, Enum as SAEnum
+from sqlalchemy import String, Float, Boolean, BigInteger, Integer, Enum as SAEnum, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geometry
 import enum
@@ -31,5 +31,8 @@ class Location(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     no_spritz: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+    city_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("cities.id"), nullable=True, index=True)
+    city: Mapped["City | None"] = relationship(back_populates="locations")
 
     price_entries: Mapped[list["PriceEntry"]] = relationship(back_populates="location")

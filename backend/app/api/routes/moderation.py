@@ -398,12 +398,19 @@ async def stats_entries(
 
 @router.get("/lors")
 async def stats_lors(
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
-    result = await db.execute(
-        text("SELECT DISTINCT lor_schluessel, pr_name FROM public.lor ORDER BY pr_name")
-    )
+    if city_id is not None:
+        result = await db.execute(
+            text("SELECT DISTINCT lor_schluessel, pr_name FROM public.lor WHERE city_id = :city_id ORDER BY pr_name"),
+            {"city_id": city_id},
+        )
+    else:
+        result = await db.execute(
+            text("SELECT DISTINCT lor_schluessel, pr_name FROM public.lor ORDER BY pr_name")
+        )
     return [{"lor_schluessel": row[0], "pr_name": row[1]} for row in result]
 
 
@@ -462,7 +469,7 @@ async def stats_prices(
                        MAX(pe.price) AS max_price
                 FROM price_entries pe
                 JOIN locations loc ON pe.location_id = loc.id
-                JOIN public.lor l ON ST_Within(ST_Transform(loc.geom, 25833), l.geom)
+                JOIN public.lor l ON ST_Within(ST_Transform(loc.geom, ST_SRID(l.geom)), l.geom)
                 WHERE l.lor_schluessel = :lor_schluessel
                   AND pe.reported_at BETWEEN :start AND :end
                   AND pe.price > 0
