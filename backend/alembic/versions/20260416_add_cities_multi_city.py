@@ -46,16 +46,10 @@ def upgrade() -> None:
     op.execute("UPDATE locations SET city_id = (SELECT id FROM cities WHERE slug = 'berlin')")
     op.create_index('ix_locations_city_id', 'locations', ['city_id'])
 
-    # 4. Extend public.lor with city_id (raw SQL — outside Alembic metadata)
-    op.execute("ALTER TABLE public.lor ADD COLUMN IF NOT EXISTS city_id INTEGER REFERENCES cities(id)")
-    op.execute("UPDATE public.lor SET city_id = (SELECT id FROM cities WHERE slug = 'berlin') WHERE city_id IS NULL")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_lor_city_id ON public.lor (city_id)")
+    # NOTE: public.lor must be extended manually as superuser — see below.
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX IF EXISTS ix_lor_city_id")
-    op.execute("ALTER TABLE public.lor DROP COLUMN IF EXISTS city_id")
-
     op.drop_index('ix_locations_city_id', 'locations')
     op.drop_column('locations', 'city_id')
 
