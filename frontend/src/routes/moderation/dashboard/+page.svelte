@@ -7,7 +7,7 @@
   interface GroupMeta { id: string; name: string; color_hex: string }
   interface UsersStats   { registrations: DayCount[]; deletions: DayCount[]; base_count: number }
   interface EntriesStats { groups: GroupMeta[]; days: { date: string; counts: Record<string, number> }[] }
-  interface DayPrice     { date: string; avg_price: number; min_price: number; max_price: number }
+  interface DayPrice     { date: string; avg_price: number; min_price?: number; max_price?: number }
   interface PricesStats  { berlin: DayPrice[]; lor: DayPrice[] }
   interface LOR          { lor_schluessel: string; pr_name: string }
   interface DrinkMeta    { id: number; name: string; color_hex: string }
@@ -101,7 +101,7 @@
   };
   const gridOpts  = { strokeDashArray: 4, borderColor: '#f0f0f0', xaxis: { lines: { show: false } } };
   const ttBase    = { theme: 'light' as const, x: { format: 'dd.MM.yyyy' }, intersect: false };
-  const ttMoney   = { ...ttBase, y: { formatter: (v: number) => v.toFixed(2) + ' €' } };
+  const ttMoney   = { ...ttBase, y: { formatter: (v: number | null) => v != null ? v.toFixed(2) + ' €' : '' } };
 
   function buildUserDays(data: UsersStats) {
     const regMap = Object.fromEntries(data.registrations.map(r => [r.date, r.count]));
@@ -187,49 +187,58 @@
     return () => chart.destroy();
   });
 
-  // ── Chart 3 — Durchschnittspreise mit Min/Max-Band ────────────────────────
+  // ── Chart 3 — Durchschnittspreise (+ Min/Max-Band wenn verfügbar) ─────────
   $effect(() => {
     if (!apexLoaded || !el3 || !pricesData || !pricesData.berlin.length) return;
     const { berlin, lor } = pricesData;
     const lorName = lors.find(l => l.lor_schluessel === selLor)?.pr_name ?? 'LOR';
+    const hasBand = berlin[0]?.min_price != null;
 
-    const series: any[] = [
-      {
+    const series: any[] = [];
+    if (hasBand) {
+      series.push({
         name: 'Preisspanne Berlin',
         type: 'rangeArea',
-        data: berlin.map(p => ({ x: ts(p.date), y: [+p.min_price.toFixed(2), +p.max_price.toFixed(2)] })),
-      },
-      {
-        name: 'Ø Berlin',
-        type: 'line',
-        data: berlin.map(p => [ts(p.date), +p.avg_price.toFixed(2)]),
-      },
-    ];
-    if (selLor && lor.length) {
-      series.push({
-        name: `Preisspanne ${lorName}`,
-        type: 'rangeArea',
-        data: lor.map(p => ({ x: ts(p.date), y: [+p.min_price.toFixed(2), +p.max_price.toFixed(2)] })),
+        data: berlin.map(p => ({ x: ts(p.date), y: [+(p.min_price!).toFixed(2), +(p.max_price!).toFixed(2)] })),
       });
+    }
+    series.push({
+      name: 'Ø Berlin',
+      type: 'line',
+      data: berlin.map(p => ({ x: ts(p.date), y: +p.avg_price.toFixed(2) })),
+    });
+    if (selLor && lor.length) {
+      if (hasBand) {
+        series.push({
+          name: `Preisspanne ${lorName}`,
+          type: 'rangeArea',
+          data: lor.map(p => ({ x: ts(p.date), y: [+(p.min_price!).toFixed(2), +(p.max_price!).toFixed(2)] })),
+        });
+      }
       series.push({
         name: `Ø ${lorName}`,
         type: 'line',
-        data: lor.map(p => [ts(p.date), +p.avg_price.toFixed(2)]),
+        data: lor.map(p => ({ x: ts(p.date), y: +p.avg_price.toFixed(2) })),
       });
     }
 
-    const baseColors = selLor ? ['#aaa', '#777', '#e8500a', '#c93e00'] : ['#aaa', '#555'];
+    const strokeWidths = series.map((s: any) => s.type === 'line' ? 2 : 0);
+    const fillOpacities = series.map((s: any) => s.type === 'rangeArea' ? 0.15 : 1);
+    const colors = hasBand
+      ? (selLor ? ['#ccc', '#777', '#f4b08c', '#e8500a'] : ['#ccc', '#555'])
+      : (selLor ? ['#777', '#e8500a'] : ['#555']);
+
     const chart = new Apex(el3, {
-      chart: baseChart({ type: 'line', height: 240 }),
+      chart: baseChart({ type: 'rangeArea', height: 240 }),
       series,
-      colors: baseColors,
+      colors,
       dataLabels: { enabled: false },
-      stroke: { curve: 'smooth' as const, width: series.map((s: any) => s.type === 'line' ? 2 : 0) },
-      fill: { opacity: series.map((s: any) => s.type === 'rangeArea' ? 0.15 : 1) },
+      stroke: { curve: 'smooth' as const, width: strokeWidths },
+      fill: { opacity: fillOpacities },
       markers: { size: series.map((s: any) => s.type === 'line' ? 3 : 0), hover: { size: 5 } },
       xaxis: xDateAxis,
-      yaxis: { labels: { formatter: (v: number) => v.toFixed(2) + ' €' } },
-      tooltip: { ...ttMoney, shared: false },
+      yaxis: { labels: { formatter: (v: number | null) => v != null ? v.toFixed(2) + ' €' : '' } },
+      tooltip: { ...ttMoney, shared: true },
       grid: gridOpts,
       legend: { position: 'top' as const, fontSize: '12px', fontWeight: 400 },
     });
