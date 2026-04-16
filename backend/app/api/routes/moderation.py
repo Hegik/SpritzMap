@@ -220,13 +220,14 @@ async def get_stats(
     # Entries last 30 days (daily buckets)
     cutoff = datetime.now(timezone.utc) - timedelta(days=30)
     daily_result = await db.execute(
-        select(
-            func.date_trunc("day", PriceEntry.reported_at).label("day"),
-            func.count(PriceEntry.id).label("count"),
-        )
-        .where(PriceEntry.reported_at >= cutoff)
-        .group_by(func.date_trunc("day", PriceEntry.reported_at))
-        .order_by(func.date_trunc("day", PriceEntry.reported_at))
+        text("""
+            SELECT date_trunc('day', reported_at) AS day, COUNT(id) AS count
+            FROM price_entries
+            WHERE reported_at >= :cutoff
+            GROUP BY 1
+            ORDER BY 1
+        """),
+        {"cutoff": cutoff},
     )
     entries_last_30_days = [
         {"date": row[0].strftime("%Y-%m-%d"), "count": row[1]}
@@ -277,24 +278,26 @@ async def stats_users(
     start, end = _time_window(granularity, year, month)
 
     reg_result = await db.execute(
-        select(
-            func.date_trunc("day", User.created_at).label("day"),
-            func.count(User.id).label("count"),
-        )
-        .where(User.created_at.between(start, end))
-        .group_by(func.date_trunc("day", User.created_at))
-        .order_by(func.date_trunc("day", User.created_at))
+        text("""
+            SELECT date_trunc('day', created_at) AS day, COUNT(id) AS count
+            FROM users
+            WHERE created_at BETWEEN :start AND :end
+            GROUP BY 1
+            ORDER BY 1
+        """),
+        {"start": start, "end": end},
     )
     registrations = [{"date": row[0].strftime("%Y-%m-%d"), "count": row[1]} for row in reg_result]
 
     del_result = await db.execute(
-        select(
-            func.date_trunc("day", UserDeletionLog.deleted_at).label("day"),
-            func.count(UserDeletionLog.id).label("count"),
-        )
-        .where(UserDeletionLog.deleted_at.between(start, end))
-        .group_by(func.date_trunc("day", UserDeletionLog.deleted_at))
-        .order_by(func.date_trunc("day", UserDeletionLog.deleted_at))
+        text("""
+            SELECT date_trunc('day', deleted_at) AS day, COUNT(id) AS count
+            FROM user_deletion_logs
+            WHERE deleted_at BETWEEN :start AND :end
+            GROUP BY 1
+            ORDER BY 1
+        """),
+        {"start": start, "end": end},
     )
     deletions = [{"date": row[0].strftime("%Y-%m-%d"), "count": row[1]} for row in del_result]
 
@@ -324,14 +327,14 @@ async def stats_entries(
     drinks = [{"id": row[0], "name": row[1], "color_hex": row[2]} for row in drinks_result]
 
     rows_result = await db.execute(
-        select(
-            func.date_trunc("day", PriceEntry.reported_at).label("day"),
-            PriceEntry.drink_id,
-            func.count(PriceEntry.id).label("count"),
-        )
-        .where(PriceEntry.reported_at.between(start, end))
-        .group_by(func.date_trunc("day", PriceEntry.reported_at), PriceEntry.drink_id)
-        .order_by(func.date_trunc("day", PriceEntry.reported_at))
+        text("""
+            SELECT date_trunc('day', reported_at) AS day, drink_id, COUNT(id) AS count
+            FROM price_entries
+            WHERE reported_at BETWEEN :start AND :end
+            GROUP BY 1, 2
+            ORDER BY 1
+        """),
+        {"start": start, "end": end},
     )
 
     day_map: dict[str, dict[str, int]] = {}
@@ -370,13 +373,14 @@ async def stats_prices(
     start, end = _time_window(granularity, year, month)
 
     berlin_result = await db.execute(
-        select(
-            func.date_trunc("day", PriceEntry.reported_at).label("day"),
-            func.avg(PriceEntry.price).label("avg_price"),
-        )
-        .where(PriceEntry.reported_at.between(start, end))
-        .group_by(func.date_trunc("day", PriceEntry.reported_at))
-        .order_by(func.date_trunc("day", PriceEntry.reported_at))
+        text("""
+            SELECT date_trunc('day', reported_at) AS day, AVG(price) AS avg_price
+            FROM price_entries
+            WHERE reported_at BETWEEN :start AND :end
+            GROUP BY 1
+            ORDER BY 1
+        """),
+        {"start": start, "end": end},
     )
     berlin = [{"date": row[0].strftime("%Y-%m-%d"), "avg_price": float(row[1])} for row in berlin_result]
 
