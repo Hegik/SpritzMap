@@ -87,7 +87,7 @@
     axisTicks: { show: false },
   };
   const gridOpts = { strokeDashArray: 4, borderColor: '#f0f0f0', xaxis: { lines: { show: false } } };
-  const ttBase   = { theme: 'light' as const, x: { format: 'dd.MM.yyyy' } };
+  const ttBase   = { theme: 'light' as const, x: { format: 'dd.MM.yyyy' }, intersect: false };
 
   // ── Chart 1 — Nutzerentwicklung ───────────────────────────────────────────
   $effect(() => {
