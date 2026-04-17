@@ -31,7 +31,6 @@
   let saving = $state(false);
   let formError = $state('');
   let newCityId = $state<number | null>(null);
-  let newCitySlug = $state('');
 
   let form = $state({
     name: '',
@@ -40,7 +39,7 @@
     center_lat: '',
     center_lon: '',
     default_zoom: '12',
-    wms_layer: 'spritzmap:lor_index',
+    wms_layer: 'spritzmap:lor_index_berlin',
   });
 
   // Pre-escaped SQL snippet for step 2 (avoids Svelte template brace conflicts)
@@ -53,11 +52,70 @@ VALUES (
   ${newCityId ?? 'CITY_ID'}  -- ID der neu angelegten Stadt
 );`;
 
-  // Auto-generate slug from name
+  const geoserverSqlSnippet = () => `WITH lor_stats AS (
+  SELECT
+    l.lor_schluessel,
+    l.geom,
+    AVG(pe.price)        AS avg_price,
+    AVG(pe.color_value)  AS avg_color_value,
+    COUNT(pe.id)         AS entry_count
+  FROM lor l
+  LEFT JOIN locations loc
+    ON ST_Within(loc.geom, ST_Transform(l.geom, 4326))
+  LEFT JOIN price_entries pe
+    ON pe.location_id = loc.id
+    AND pe.is_current   = TRUE
+    AND pe.unavailable  = FALSE
+    AND pe.drink_id     = %drink_id%
+  WHERE l.city_id = (SELECT id FROM cities WHERE slug = '${form.slug || 'CITY_SLUG'}')
+  GROUP BY l.lor_schluessel, l.geom
+),
+global_stats AS (
+  SELECT
+    MAX(avg_price) AS max_price,
+    MIN(avg_price) AS min_price
+  FROM lor_stats
+  WHERE avg_price IS NOT NULL
+),
+drink_meta AS (
+  SELECT color_hex
+  FROM drinks
+  WHERE id = %drink_id%
+)
+SELECT
+  s.lor_schluessel,
+  s.geom,
+  s.avg_price,
+  s.entry_count,
+  dm.color_hex AS drink_color,
+  CASE
+    WHEN s.avg_price IS NULL OR g.max_price IS NULL OR g.min_price <= 0
+    THEN NULL
+    WHEN g.max_price = g.min_price
+    THEN 50.0 * (COALESCE(s.avg_color_value, 128) / 128.0)
+    ELSE LEAST(100.0, GREATEST(0.0,
+      (LN(g.max_price / s.avg_price) / LN(g.max_price / g.min_price))
+      * (COALESCE(s.avg_color_value, 128) / 128.0)
+      * 100.0
+    ))
+  END AS spritz_index
+FROM lor_stats s
+CROSS JOIN global_stats g
+CROSS JOIN drink_meta dm`;
+
+  let copied = $state(false);
+  function copyGeoserverSql() {
+    navigator.clipboard.writeText(geoserverSqlSnippet());
+    copied = true;
+    setTimeout(() => { copied = false; }, 2000);
+  }
+
+  // Auto-generate slug and wms_layer from name
   function onNameInput() {
     form.slug = form.name.toLowerCase()
       .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
       .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    form.wms_layer = `spritzmap:lor_index_${form.slug}`;
   }
 
   async function loadCities() {
@@ -111,7 +169,6 @@ VALUES (
       }
       const data = await api.post<{ id: number; slug: string }>('/admin/cities', body);
       newCityId = data.id;
-      newCitySlug = data.slug;
       wizardStep = 2;
     } catch (e: any) {
       formError = e.message;
@@ -129,9 +186,8 @@ VALUES (
       await loadCities();
       showWizard = false;
       wizardStep = 1;
-      form = { name: '', slug: '', bbox: '', center_lat: '', center_lon: '', default_zoom: '12', wms_layer: 'spritzmap:lor_index' };
+      form = { name: '', slug: '', bbox: '', center_lat: '', center_lon: '', default_zoom: '12', wms_layer: 'spritzmap:lor_index_berlin' };
       newCityId = null;
-      newCitySlug = '';
     } catch (e: any) {
       formError = e.message;
     } finally {
@@ -339,8 +395,8 @@ VALUES (
           <h2>Schritt 4 — GeoServer-Layer einrichten</h2>
 
           <div class="info-box">
-            Der GeoServer-Layer erzeugt die farbige Heatmap-Darstellung der Bezirke bei niedrigem Zoom.
-            Dafür muss die bestehende SQL-View im GeoServer die neue <code>city_id</code> kennen.
+            Jede Stadt bekommt einen eigenen GeoServer-Layer mit einer SQL-View, die nur die Bezirke
+            dieser Stadt anzeigt. Der fertige SQL-Code ist unten bereits generiert — du musst ihn nur kopieren.
           </div>
 
           <div class="steps-list">
@@ -349,31 +405,53 @@ VALUES (
               <div>
                 <strong>GeoServer-Admin öffnen</strong><br>
                 <a href="{GEOSERVER_URL}/web/" target="_blank" rel="noopener">{GEOSERVER_URL}/web/</a>
-                → Layer → <code>spritzmap:lor_index</code> → SQL View bearbeiten.
+                → Daten → Layer hinzufügen → SQL View → Workspace <code>spritzmap</code>
               </div>
             </div>
             <div class="step-item">
               <div class="step-num">2</div>
               <div>
-                <strong>SQL-View erweitern</strong><br>
-                Füge <code>city_id</code> als <code>viewparam</code> hinzu, damit die View nach Stadt filtern kann:
-                <pre class="code-block">-- In der WHERE-Clause der SQL-View:
-WHERE l.city_id = %city_id%
-  AND pe.drink_id = %drink_id%</pre>
+                <strong>Layer-Name vergeben</strong><br>
+                Name des neuen Layers: <code>lor_index_{form.slug || 'CITY_SLUG'}</code><br>
+                <small>Der vollständige Layer-Name lautet dann <code>spritzmap:lor_index_{form.slug || 'CITY_SLUG'}</code></small>
               </div>
             </div>
             <div class="step-item">
               <div class="step-num">3</div>
               <div>
-                <strong>WMS-Layer-Name bestätigen</strong><br>
-                Standard ist <code>spritzmap:lor_index</code>. Ändere ihn unten nur, wenn du einen anderen Layer-Namen vergeben hast.
+                <strong>SQL-View einfügen</strong><br>
+                Kopiere den generierten SQL-Code und füge ihn als SQL-View ein.
+                Der <code>drink_id</code>-Parameter ist bereits als <code>viewparam</code> vordefiniert.
+                <div class="code-header">
+                  <span>SQL für Layer <code>lor_index_{form.slug || 'CITY_SLUG'}</code></span>
+                  <button class="btn-copy" onclick={copyGeoserverSql}>
+                    {copied ? '✓ Kopiert!' : 'Kopieren'}
+                  </button>
+                </div>
+                <pre class="code-block">{geoserverSqlSnippet()}</pre>
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-num">4</div>
+              <div>
+                <strong>Viewparam registrieren</strong><br>
+                Im GeoServer-Formular unter „SQL View Parameters" eintragen:<br>
+                Name: <code>drink_id</code> — Default: <code>1</code> — Validator: <code>^[\d]+$</code>
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-num">5</div>
+              <div>
+                <strong>Geometrie-Attribut konfigurieren</strong><br>
+                Klicke „Refresh" → Geometry-Typ auf <code>MultiPolygon</code> setzen → SRID auf <code>25833</code> (Berlin) oder den SRID deiner LOR-Daten.
               </div>
             </div>
           </div>
 
           <label class="wms-label">
-            WMS-Layer-Name
-            <input type="text" bind:value={form.wms_layer} placeholder="spritzmap:lor_index" />
+            WMS-Layer-Name (wird in der Datenbank gespeichert)
+            <input type="text" bind:value={form.wms_layer} placeholder={`spritzmap:lor_index_${form.slug || 'CITY_SLUG'}`} />
+            <small>Standard: <code>spritzmap:lor_index_{form.slug || 'CITY_SLUG'}</code> — nur ändern wenn du einen anderen Namen vergeben hast</small>
           </label>
 
           <div class="wizard-actions">
@@ -550,7 +628,40 @@ WHERE l.city_id = %city_id%
   }
 
   .info-box a { color: #0ea5e9; }
-  .info-important a { color: #ea580c; }
+
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 0.75rem;
+    margin-bottom: 0;
+    background: #2d3748;
+    border-radius: 6px 6px 0 0;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.75rem;
+    color: #a0aec0;
+  }
+
+  .code-header code { color: #e2e8f0; }
+
+  .btn-copy {
+    padding: 2px 10px;
+    background: #4a5568;
+    color: #e2e8f0;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .btn-copy:hover { background: #718096; }
+
+  .code-header + .code-block {
+    border-radius: 0 0 6px 6px;
+    margin-top: 0;
+  }
 
   .form-grid {
     display: grid;

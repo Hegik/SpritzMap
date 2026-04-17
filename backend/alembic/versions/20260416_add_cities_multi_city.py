@@ -35,7 +35,7 @@ def upgrade() -> None:
     op.execute("""
         INSERT INTO cities (name, slug, bbox, center_lat, center_lon, default_zoom, wms_layer)
         VALUES ('Berlin', 'berlin', '52.3382,13.0883,52.6755,13.7611',
-                52.52, 13.405, 12, 'spritzmap:lor_index')
+                52.52, 13.405, 12, 'spritzmap:lor_index_berlin')
     """)
 
     # 3. Add city_id to locations (nullable first for backfill)

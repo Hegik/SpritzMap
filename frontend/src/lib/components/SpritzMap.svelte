@@ -198,18 +198,24 @@
     }
   }
 
-  function buildWmsUrl(drinkId: number | null): string {
-    return `${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=spritzmap:lor_index&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`;
+  function buildWmsUrl(drinkId: number | null, wmsLayer: string): string {
+    return `${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=${wmsLayer}&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`;
   }
 
   function applyCity(city: CityMeta) {
     // Fly to new city center
     map.flyTo({ center: [city.center_lon, city.center_lat], zoom: city.default_zoom });
 
-    // Show/hide WMS layer based on city support
+    // Update WMS tiles to this city's layer and show/hide accordingly
     const hasWms = city.wms_layer != null;
     if (map.getLayer('wms-lor')) {
       map.setLayoutProperty('wms-lor', 'visibility', hasWms ? 'visible' : 'none');
+    }
+    if (hasWms) {
+      const src = map.getSource('wms-lor') as any;
+      if (src?.setTiles) {
+        src.setTiles([buildWmsUrl($selectedDrinkId, city.wms_layer!)]);
+      }
     }
 
     loadMarkers(city, $selectedDrinkId, $selectedPriceTier);
@@ -316,7 +322,7 @@
           },
           'wms-lor': {
             type: 'raster',
-            tiles: [buildWmsUrl($selectedDrinkId)],
+            tiles: [buildWmsUrl($selectedDrinkId, initialCity?.wms_layer ?? 'spritzmap:lor_index_berlin')],
             tileSize: 256,
           },
         },
@@ -368,8 +374,9 @@
       // Subscribe after map is ready — first call fires immediately with current value
       const updateWms = (drinkId: number | null) => {
         const src = map.getSource('wms-lor') as any;
+        const wmsLayer = $selectedCity?.wms_layer ?? 'spritzmap:lor_index_berlin';
         if (src?.setTiles) {
-          src.setTiles([buildWmsUrl(drinkId)]);
+          src.setTiles([buildWmsUrl(drinkId, wmsLayer)]);
         }
       };
 
