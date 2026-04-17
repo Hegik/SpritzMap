@@ -30,9 +30,13 @@
   const YEARS = Array.from({ length: 4 }, (_, i) => NOW.getFullYear() - i);
   const MONTH_NAMES = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 
-  let granularity  = $state<'year' | 'month'>('month');
+  interface CityItem { id: number; name: string }
+
+  let granularity  = $state<'all' | 'year' | 'month'>('month');
   let selYear      = $state(NOW.getFullYear());
   let selMonth     = $state(NOW.getMonth() + 1);
+  let selCityId    = $state<number | ''>('');
+  let cities       = $state<CityItem[]>([]);
 
   // ── data state ────────────────────────────────────────────────────────────
   // time-filtered
@@ -448,9 +452,15 @@
 
   // ── load functions ────────────────────────────────────────────────────────
   function fParams() {
-    const p = new URLSearchParams({ granularity, year: String(selYear) });
+    const p = new URLSearchParams({ granularity });
+    if (granularity !== 'all') p.set('year', String(selYear));
     if (granularity === 'month') p.set('month', String(selMonth));
+    if (selCityId !== '') p.set('city_id', String(selCityId));
     return p.toString();
+  }
+
+  function cityParam() {
+    return selCityId !== '' ? `?city_id=${selCityId}` : '';
   }
 
   async function loadAll() {
@@ -493,9 +503,25 @@
   async function loadHistogram() {
     const p = new URLSearchParams();
     if (selHistDrink) p.set('drink_id', selHistDrink);
+    if (selCityId !== '') p.set('city_id', String(selCityId));
     histogramData = null;
     try { histogramData = await api.get<HistogramStats>(`/moderation/graph-price-histogram?${p}`); }
     catch { /* silent */ }
+  }
+
+  async function loadStaticCharts() {
+    const q = cityParam();
+    await Promise.all([
+      api.get<TopLocation[]>(`/moderation/graph-top-locations${q}`).then(d => { topLocations = d; }).catch(() => {}),
+      api.get<FreshnessItem[]>(`/moderation/graph-freshness${q}`).then(d => { freshnessData = d; }).catch(() => {}),
+      api.get<HeatmapRow[]>(`/moderation/graph-heatmap${q}`).then(d => { heatmapRaw = d; }).catch(() => {}),
+      api.get<LocationTypeItem[]>(`/moderation/graph-location-types${q}`).then(d => { locTypesData = d; }).catch(() => {}),
+      loadHistogram(),
+    ]);
+  }
+
+  async function loadEverything() {
+    await Promise.all([loadAll(), loadStaticCharts()]);
   }
 
   onMount(async () => {
@@ -505,18 +531,12 @@
 
     lors = await api.get<LOR[]>('/moderation/lors').catch(() => []);
     drinks = await api.get<DrinkMeta[]>('/drinks/').catch(() => []);
+    cities = await api.get<CityItem[]>('/cities/').catch(() => []);
     loadingC = true;
     changes = await api.get<PriceChange[]>('/moderation/price-feed?limit=20').catch(() => []);
     loadingC = false;
 
-    await Promise.all([
-      loadAll(),
-      api.get<TopLocation[]>('/moderation/graph-top-locations').then(d => { topLocations = d; }).catch(() => {}),
-      api.get<FreshnessItem[]>('/moderation/graph-freshness').then(d => { freshnessData = d; }).catch(() => {}),
-      api.get<HeatmapRow[]>('/moderation/graph-heatmap').then(d => { heatmapRaw = d; }).catch(() => {}),
-      api.get<LocationTypeItem[]>('/moderation/graph-location-types').then(d => { locTypesData = d; }).catch(() => {}),
-      api.get<HistogramStats>('/moderation/graph-price-histogram').then(d => { histogramData = d; }).catch(() => {}),
-    ]);
+    await loadEverything();
   });
 
   // ── Widget actions ────────────────────────────────────────────────────────
@@ -548,22 +568,31 @@
   <!-- ── Global filter bar ───────────────────────────────────────────────── -->
   <div class="filter-bar">
     <div class="radio-group">
-      <label class:active={granularity === 'month'}>
-        <input type="radio" bind:group={granularity} value="month" /> Monat
+      <label class:active={granularity === 'all'}>
+        <input type="radio" bind:group={granularity} value="all" /> Gesamt
       </label>
       <label class:active={granularity === 'year'}>
         <input type="radio" bind:group={granularity} value="year" /> Jahr
       </label>
+      <label class:active={granularity === 'month'}>
+        <input type="radio" bind:group={granularity} value="month" /> Monat
+      </label>
     </div>
+    {#if granularity !== 'all'}
+      <select bind:value={selYear} class="f-sel">
+        {#each YEARS as y}<option value={y}>{y}</option>{/each}
+      </select>
+    {/if}
     {#if granularity === 'month'}
       <select bind:value={selMonth} class="f-sel">
         {#each MONTH_NAMES as name, i}<option value={i + 1}>{name}</option>{/each}
       </select>
     {/if}
-    <select bind:value={selYear} class="f-sel">
-      {#each YEARS as y}<option value={y}>{y}</option>{/each}
+    <select bind:value={selCityId} class="f-sel">
+      <option value="">Alle Städte</option>
+      {#each cities as city}<option value={city.id}>{city.name}</option>{/each}
     </select>
-    <button class="btn-primary" onclick={loadAll}>Laden</button>
+    <button class="btn-primary" onclick={loadEverything}>Laden</button>
   </div>
 
   <!-- ── Section: Nutzer & Aktivität ─────────────────────────────────────── -->

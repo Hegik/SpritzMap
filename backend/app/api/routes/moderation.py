@@ -270,8 +270,12 @@ async def get_stats(
 
 # ── helper ────────────────────────────────────────────────────────────────────
 
-def _time_window(granularity: str, year: int, month: int | None) -> tuple[datetime, datetime]:
+def _time_window(granularity: str, year: int | None, month: int | None) -> tuple[datetime, datetime]:
     utc = timezone.utc
+    if granularity == "all":
+        return datetime(2000, 1, 1, tzinfo=utc), datetime(2100, 12, 31, 23, 59, 59, tzinfo=utc)
+    if year is None:
+        year = datetime.now(utc).year
     if granularity == "year":
         return datetime(year, 1, 1, tzinfo=utc), datetime(year, 12, 31, 23, 59, 59, tzinfo=utc)
     last_day = calendar.monthrange(year, month)[1]
@@ -283,7 +287,7 @@ def _time_window(granularity: str, year: int, month: int | None) -> tuple[dateti
 @router.get("/graph-users")
 async def stats_users(
     granularity: str = "month",
-    year: int = 2026,
+    year: int | None = None,
     month: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
@@ -327,9 +331,10 @@ async def stats_users(
 @router.get("/graph-entries")
 async def stats_entries(
     granularity: str = "month",
-    year: int = 2026,
+    year: int | None = None,
     month: int | None = None,
     group_by: str = "drink",
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
@@ -337,16 +342,23 @@ async def stats_entries(
         month = 1
     start, end = _time_window(granularity, year, month)
 
+    city_filter_loc = "AND loc.city_id = :city_id" if city_id else ""
+    city_filter_sub = "AND location_id IN (SELECT id FROM locations WHERE city_id = :city_id)" if city_id else ""
+    base_params: dict = {"start": start, "end": end}
+    if city_id:
+        base_params["city_id"] = city_id
+
     if group_by == "location_type":
         groups_result = await db.execute(
-            text("""
+            text(f"""
                 SELECT DISTINCT loc.location_type::text
                 FROM price_entries pe
                 JOIN locations loc ON pe.location_id = loc.id
                 WHERE pe.reported_at BETWEEN :start AND :end
+                {city_filter_loc}
                 ORDER BY 1
             """),
-            {"start": start, "end": end},
+            base_params,
         )
         groups = [
             {
@@ -357,17 +369,18 @@ async def stats_entries(
             for row in groups_result
         ]
         rows_result = await db.execute(
-            text("""
+            text(f"""
                 SELECT date_trunc('day', pe.reported_at) AS day,
                        loc.location_type::text,
                        COUNT(pe.id) AS count
                 FROM price_entries pe
                 JOIN locations loc ON pe.location_id = loc.id
                 WHERE pe.reported_at BETWEEN :start AND :end
+                {city_filter_loc}
                 GROUP BY 1, 2
                 ORDER BY 1
             """),
-            {"start": start, "end": end},
+            base_params,
         )
     else:
         drinks_result = await db.execute(
@@ -375,14 +388,15 @@ async def stats_entries(
         )
         groups = [{"id": str(row[0]), "name": row[1], "color_hex": row[2]} for row in drinks_result]
         rows_result = await db.execute(
-            text("""
+            text(f"""
                 SELECT date_trunc('day', reported_at) AS day, drink_id::text, COUNT(id) AS count
                 FROM price_entries
                 WHERE reported_at BETWEEN :start AND :end
+                {city_filter_sub}
                 GROUP BY 1, 2
                 ORDER BY 1
             """),
-            {"start": start, "end": end},
+            base_params,
         )
 
     day_map: dict[str, dict[str, int]] = {}
@@ -417,10 +431,11 @@ async def stats_lors(
 @router.get("/graph-prices")
 async def stats_prices(
     granularity: str = "month",
-    year: int = 2026,
+    year: int | None = None,
     month: int | None = None,
     lor_schluessel: str | None = None,
     drink_id: int | None = None,
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
@@ -429,9 +444,13 @@ async def stats_prices(
     start, end = _time_window(granularity, year, month)
 
     drink_filter = "AND drink_id = :drink_id" if drink_id is not None else ""
+    city_filter = "AND location_id IN (SELECT id FROM locations WHERE city_id = :city_id)" if city_id else ""
+    city_filter_loc = "AND loc.city_id = :city_id" if city_id else ""
     params: dict = {"start": start, "end": end}
     if drink_id is not None:
         params["drink_id"] = drink_id
+    if city_id is not None:
+        params["city_id"] = city_id
 
     berlin_result = await db.execute(
         text(f"""
@@ -443,6 +462,7 @@ async def stats_prices(
             WHERE reported_at BETWEEN :start AND :end
               AND price > 0
               {drink_filter}
+              {city_filter}
             GROUP BY 1
             ORDER BY 1
         """),
@@ -474,6 +494,7 @@ async def stats_prices(
                   AND pe.reported_at BETWEEN :start AND :end
                   AND pe.price > 0
                   {drink_filter}
+                  {city_filter_loc}
                 GROUP BY 1
                 ORDER BY 1
             """),
@@ -545,8 +566,9 @@ async def stats_price_changes(
 @router.get("/graph-drink-trends")
 async def stats_drink_trends(
     granularity: str = "month",
-    year: int = 2026,
+    year: int | None = None,
     month: int | None = None,
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
@@ -559,18 +581,24 @@ async def stats_drink_trends(
     )
     drinks = [{"id": row[0], "name": row[1], "color_hex": row[2]} for row in drinks_result]
 
+    city_filter = "AND location_id IN (SELECT id FROM locations WHERE city_id = :city_id)" if city_id else ""
+    params: dict = {"start": start, "end": end}
+    if city_id:
+        params["city_id"] = city_id
+
     rows_result = await db.execute(
-        text("""
+        text(f"""
             SELECT date_trunc('day', reported_at) AS day,
                    drink_id,
                    AVG(price) AS avg_price
             FROM price_entries
             WHERE reported_at BETWEEN :start AND :end
               AND price > 0
+              {city_filter}
             GROUP BY 1, 2
             ORDER BY 1
         """),
-        {"start": start, "end": end},
+        params,
     )
 
     day_map: dict[str, dict[str, float]] = {}
@@ -587,6 +615,7 @@ async def stats_drink_trends(
 @router.get("/graph-price-histogram")
 async def stats_price_histogram(
     drink_id: int | None = None,
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
@@ -598,9 +627,12 @@ async def stats_price_histogram(
     drinks = [{"id": row[0], "name": row[1], "color_hex": row[2]} for row in drinks_result]
 
     drink_filter = "AND drink_id = :drink_id" if drink_id is not None else ""
+    city_filter = "AND location_id IN (SELECT id FROM locations WHERE city_id = :city_id)" if city_id else ""
     params: dict = {}
     if drink_id is not None:
         params["drink_id"] = drink_id
+    if city_id is not None:
+        params["city_id"] = city_id
 
     result = await db.execute(
         text(f"""
@@ -610,6 +642,7 @@ async def stats_price_histogram(
             FROM price_entries
             WHERE is_current = TRUE AND price > 0
               {drink_filter}
+              {city_filter}
             GROUP BY 1, 2
             ORDER BY 1
         """),
@@ -633,7 +666,7 @@ async def stats_price_histogram(
 @router.get("/graph-moderation-activity")
 async def stats_moderation_activity(
     granularity: str = "month",
-    year: int = 2026,
+    year: int | None = None,
     month: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
@@ -667,20 +700,27 @@ async def stats_moderation_activity(
 @router.get("/graph-top-locations")
 async def stats_top_locations(
     limit: int = 15,
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
+    city_filter = "AND loc.city_id = :city_id" if city_id else ""
+    params: dict = {"limit": limit}
+    if city_id:
+        params["city_id"] = city_id
+
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT loc.name, COUNT(pe.id) AS entry_count, AVG(pe.price) AS avg_price
             FROM price_entries pe
             JOIN locations loc ON pe.location_id = loc.id
             WHERE pe.price > 0
+              {city_filter}
             GROUP BY loc.id, loc.name
             ORDER BY entry_count DESC
             LIMIT :limit
         """),
-        {"limit": limit},
+        params,
     )
     return [
         {"location_name": row[0], "entry_count": int(row[1]), "avg_price": float(row[2])}
@@ -690,11 +730,17 @@ async def stats_top_locations(
 
 @router.get("/graph-freshness")
 async def stats_freshness(
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
+    city_filter = "AND location_id IN (SELECT id FROM locations WHERE city_id = :city_id)" if city_id else ""
+    params: dict = {}
+    if city_id:
+        params["city_id"] = city_id
+
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT
               CASE
                 WHEN NOW() - last_confirmed_at < INTERVAL '7 days'  THEN 'Frisch'
@@ -705,8 +751,10 @@ async def stats_freshness(
               COUNT(*) AS count
             FROM price_entries
             WHERE is_current = TRUE AND price > 0
+              {city_filter}
             GROUP BY bucket
-        """)
+        """),
+        params,
     )
     bucket_order = ["Frisch", "Aktuell", "Veraltet", "Alt"]
     data = {row[0]: int(row[1]) for row in result}
@@ -715,36 +763,52 @@ async def stats_freshness(
 
 @router.get("/graph-heatmap")
 async def stats_heatmap(
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
+    city_filter = "WHERE location_id IN (SELECT id FROM locations WHERE city_id = :city_id)" if city_id else ""
+    params: dict = {}
+    if city_id:
+        params["city_id"] = city_id
+
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT EXTRACT(dow FROM reported_at)::int AS dow,
                    EXTRACT(hour FROM reported_at AT TIME ZONE 'Europe/Berlin')::int AS hour,
                    COUNT(*) AS count
             FROM price_entries
+            {city_filter}
             GROUP BY dow, hour
             ORDER BY dow, hour
-        """)
+        """),
+        params,
     )
     return [{"dow": row[0], "hour": row[1], "count": int(row[2])} for row in result]
 
 
 @router.get("/graph-location-types")
 async def stats_location_types(
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
+    city_filter = "AND loc.city_id = :city_id" if city_id else ""
+    params: dict = {}
+    if city_id:
+        params["city_id"] = city_id
+
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT loc.location_type::text, COUNT(pe.id) AS count, AVG(pe.price) AS avg_price
             FROM price_entries pe
             JOIN locations loc ON pe.location_id = loc.id
             WHERE pe.price > 0
+              {city_filter}
             GROUP BY loc.location_type
             ORDER BY count DESC
-        """)
+        """),
+        params,
     )
     return [
         {

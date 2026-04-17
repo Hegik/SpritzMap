@@ -64,7 +64,7 @@
     $drinks.find((d) => d.id === drinkId)?.color_hex ?? '#ff6e00'
   );
 
-  const previewHtml = $derived(buildIconHtml(selectedDrinkColor, colorValue, 120));
+  const previewHtml = $derived(buildIconHtml(selectedDrinkColor, colorValue, 180));
 
   async function submit() {
     error = '';
