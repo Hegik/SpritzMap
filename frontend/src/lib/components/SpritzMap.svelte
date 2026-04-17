@@ -235,13 +235,13 @@
     return html;
   }
 
-  const INTENSITY_LABELS = ['Fast nur Sekt', 'sehr lasch', 'lasch', 'ok', 'gut gemeint', 'stark', 'Sekt, wo?'];
+  const INTENSITY_LABELS = ['Fast nur Sekt', 'sehr lasch', 'lasch', 'ok', 'schon ordentlich', 'stark', 'Sekt, wo?'];
 
   function buildIntensityBarHtml(colorValue: number, colorHex: string): string {
     const leftPct = (colorValue / 255) * 100;
     const segmentIndex = Math.min(Math.floor((colorValue / 255) * 7), 6);
     const label = INTENSITY_LABELS[segmentIndex];
-    return `<div class="popup-intensity"><div class="popup-intensity-track"><div class="popup-intensity-dot" style="left:${leftPct.toFixed(1)}%;background:${colorHex};"></div></div><div class="popup-intensity-label">${label}</div></div>`;
+    return `<div class="popup-intensity"><div class="popup-intensity-title">Aperol-Anteil</div><div class="popup-intensity-track" style="background:${colorHex}20;"><div class="popup-intensity-dot" style="left:${leftPct.toFixed(1)}%;background:${colorHex};"></div></div><div class="popup-intensity-label">${label}</div></div>`;
   }
 
   async function showPopup(e: any) {
@@ -656,6 +656,14 @@
 
   :global(.popup-intensity) {
     margin: 2px 0 8px;
+  }
+
+  :global(.popup-intensity-title) {
+    font-size: 0.72rem;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 5px;
   }
 
   :global(.popup-intensity-track) {
