@@ -123,6 +123,7 @@ async def list_entries(
     username: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    city_id: int | None = None,
     page: int = 1,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
@@ -139,6 +140,8 @@ async def list_entries(
         conditions.append(PriceEntry.reported_at >= date_from)
     if date_to:
         conditions.append(PriceEntry.reported_at <= date_to)
+    if city_id is not None:
+        conditions.append(Location.city_id == city_id)
 
     joins = (
         lambda q: q

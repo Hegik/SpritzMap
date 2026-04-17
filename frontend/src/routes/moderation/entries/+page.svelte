@@ -16,6 +16,7 @@
   }
 
   interface Drink { id: number; name: string }
+  interface CityItem { id: number; name: string }
 
   // ── state ─────────────────────────────────────────────────────────────────
   let entries = $state<Entry[]>([]);
@@ -31,8 +32,10 @@
   let filterUser = $state('');
   let filterDateFrom = $state('');
   let filterDateTo = $state('');
+  let filterCityId = $state('');
 
   let drinks = $state<Drink[]>([]);
+  let cities = $state<CityItem[]>([]);
   let locationOptions = $state<string[]>([]);
   let usernameOptions = $state<string[]>([]);
 
@@ -52,6 +55,7 @@
       if (filterUser) params.set('username', filterUser);
       if (filterDateFrom) params.set('date_from', filterDateFrom);
       if (filterDateTo) params.set('date_to', filterDateTo);
+      if (filterCityId) params.set('city_id', filterCityId);
       const data = await api.get<{ total: number; items: Entry[] }>(`/moderation/entries?${params}`);
       entries = data.items;
       total = data.total;
@@ -64,13 +68,15 @@
   }
 
   onMount(async () => {
-    const [drinksData, filterData] = await Promise.all([
+    const [drinksData, filterData, citiesData] = await Promise.all([
       api.get<Drink[]>('/drinks/').catch(() => []),
       api.get<{ locations: string[]; usernames: string[] }>('/moderation/filter-options').catch(() => ({ locations: [], usernames: [] })),
+      api.get<CityItem[]>('/cities/').catch(() => []),
     ]);
     drinks = drinksData;
     locationOptions = filterData.locations;
     usernameOptions = filterData.usernames;
+    cities = citiesData;
     await load();
   });
 
@@ -85,6 +91,7 @@
     filterUser = '';
     filterDateFrom = '';
     filterDateTo = '';
+    filterCityId = '';
     page = 1;
     load();
   }
@@ -134,6 +141,12 @@
 
   <!-- Filter bar -->
   <div class="filter-bar">
+    <select bind:value={filterCityId} class="filter-input">
+      <option value="">Alle Städte</option>
+      {#each cities as city}
+        <option value={String(city.id)}>{city.name}</option>
+      {/each}
+    </select>
     <select bind:value={filterDrinkId} class="filter-input">
       <option value="">{$t.moderation.filter_drink} – alle</option>
       {#each drinks as d}
