@@ -31,6 +31,7 @@
   let saving = $state(false);
   let formError = $state('');
   let newCityId = $state<number | null>(null);
+  let step3Done = $state(false);
 
   let form = $state({
     name: '',
@@ -39,18 +40,24 @@
     center_lat: '',
     center_lon: '',
     default_zoom: '12',
-    wms_layer: 'spritzmap:lor_index_berlin',
+    wms_layer: '',
   });
 
-  // Pre-escaped SQL snippet for step 2 (avoids Svelte template brace conflicts)
+  // SQL snippet for LOR import (no city_id yet — linked after city creation in step 3)
   const lorSqlSnippet = () => `-- Beispiel: Bezirk einfügen (für jedes Gebiet wiederholen)
-INSERT INTO public.lor (lor_schluessel, pr_name, geom, city_id)
+-- city_id wird erst nach Stadtanlage in Schritt 3 verknüpft
+INSERT INTO public.lor (lor_schluessel, pr_name, geom)
 VALUES (
   '010101',          -- eindeutiger Schlüssel
   'Altona-Altstadt', -- Bezirksname
-  ST_GeomFromGeoJSON('{"type":"Polygon","coordinates":[...]}'),
-  ${newCityId ?? 'CITY_ID'}  -- ID der neu angelegten Stadt
+  ST_GeomFromGeoJSON('{"type":"Polygon","coordinates":[...]}')
 );`;
+
+  // SQL snippet to link LOR rows to the newly created city (step 3)
+  const lorLinkSnippet = () => `-- LOR-Daten mit der neuen Stadt verknüpfen
+UPDATE public.lor
+SET city_id = ${newCityId ?? 'CITY_ID'}
+WHERE city_id IS NULL;`;
 
   const geoserverSqlSnippet = () => `WITH lor_stats AS (
   SELECT
@@ -110,6 +117,13 @@ CROSS JOIN drink_meta dm`;
     setTimeout(() => { copied = false; }, 2000);
   }
 
+  let copiedLorLink = $state(false);
+  function copyLorLinkSql() {
+    navigator.clipboard.writeText(lorLinkSnippet());
+    copiedLorLink = true;
+    setTimeout(() => { copiedLorLink = false; }, 2000);
+  }
+
   // Auto-generate slug and wms_layer from name
   function onNameInput() {
     form.slug = form.name.toLowerCase()
@@ -149,8 +163,18 @@ CROSS JOIN drink_meta dm`;
     await loadCities();
   }
 
-  // Step 1: Create the city record
-  async function saveStep1() {
+  // Step 1: Validate name/slug only — no DB write yet
+  function advanceStep1() {
+    formError = '';
+    if (!form.name.trim() || !form.slug.trim()) {
+      formError = 'Bitte Stadtname und Slug eingeben.';
+      return;
+    }
+    wizardStep = 2;
+  }
+
+  // Step 3: Create the city record in DB
+  async function saveStep3() {
     saving = true;
     formError = '';
     try {
@@ -162,14 +186,14 @@ CROSS JOIN drink_meta dm`;
         center_lon: parseFloat(form.center_lon),
         default_zoom: parseInt(form.default_zoom),
         osm_sync_enabled: true,
-        wms_layer: null, // set in step 4
+        wms_layer: form.wms_layer.trim() || null,
       };
       if (!body.name || !body.slug || !body.bbox || isNaN(body.center_lat) || isNaN(body.center_lon)) {
         throw new Error('Bitte alle Pflichtfelder ausfüllen.');
       }
       const data = await api.post<{ id: number; slug: string }>('/admin/cities', body);
       newCityId = data.id;
-      wizardStep = 2;
+      step3Done = true;
     } catch (e: any) {
       formError = e.message;
     } finally {
@@ -177,27 +201,18 @@ CROSS JOIN drink_meta dm`;
     }
   }
 
-  // Step 4: Set wms_layer and finish
-  async function saveStep4() {
-    saving = true;
-    formError = '';
-    try {
-      await api.patch(`/admin/cities/${newCityId}`, { wms_layer: form.wms_layer.trim() || null });
-      await loadCities();
-      showWizard = false;
-      wizardStep = 1;
-      form = { name: '', slug: '', bbox: '', center_lat: '', center_lon: '', default_zoom: '12', wms_layer: 'spritzmap:lor_index_berlin' };
-      newCityId = null;
-    } catch (e: any) {
-      formError = e.message;
-    } finally {
-      saving = false;
-    }
+  function finishWizard() {
+    loadCities();
+    showWizard = false;
+    wizardStep = 1;
+    step3Done = false;
+    form = { name: '', slug: '', bbox: '', center_lat: '', center_lon: '', default_zoom: '12', wms_layer: '' };
+    newCityId = null;
   }
 
   function startOsmSync() {
     if (newCityId) triggerSync(newCityId);
-    wizardStep = 4;
+    finishWizard();
   }
 
   onMount(async () => {
@@ -213,7 +228,7 @@ CROSS JOIN drink_meta dm`;
   <div class="page-header">
     <h1>Städte verwalten</h1>
     {#if !showWizard}
-      <button class="btn-primary" onclick={() => { showWizard = true; wizardStep = 1; formError = ''; }}>
+      <button class="btn-primary" onclick={() => { showWizard = true; wizardStep = 1; formError = ''; step3Done = false; }}>
         + Neue Stadt anlegen
       </button>
     {/if}
@@ -236,7 +251,7 @@ CROSS JOIN drink_meta dm`;
           <div class="progress-step" class:done={wizardStep > s} class:active={wizardStep === s}>
             <div class="step-dot">{wizardStep > s ? '✓' : s}</div>
             <div class="step-label">
-              {s === 1 ? 'Grunddaten' : s === 2 ? 'LOR importieren' : s === 3 ? 'OSM-Sync' : 'GeoServer'}
+              {s === 1 ? 'LOR importieren' : s === 2 ? 'GeoServer' : s === 3 ? 'Grunddaten' : 'OSM-Sync'}
             </div>
           </div>
           {#if s < 4}<div class="progress-line" class:done={wizardStep > s}></div>{/if}
@@ -247,17 +262,15 @@ CROSS JOIN drink_meta dm`;
         <div class="alert alert-error">{formError}</div>
       {/if}
 
-      <!-- Step 1: Basic data -->
+      <!-- Step 1: LOR import + Name/Slug -->
       {#if wizardStep === 1}
         <div class="wizard-card">
-          <h2>Schritt 1 — Grunddaten</h2>
+          <h2>Schritt 1 — Bezirksgrenzen (LOR) importieren</h2>
 
-          <div class="info-box">
-            <strong>Bbox ermitteln:</strong> Gehe auf
-            <a href="https://boundingbox.klokantech.com/" target="_blank" rel="noopener">boundingbox.klokantech.com</a>,
-            wähle die Stadt aus und kopiere das Ergebnis im Format <code>CSV</code>
-            (Reihenfolge: <code>min_lon, min_lat, max_lon, max_lat</code> → umstellen auf
-            <code>min_lat, min_lon, max_lat, max_lon</code>).
+          <div class="info-box info-important">
+            <strong>Pflichtschritt:</strong> Ohne Bezirksgrenzen funktioniert die Heatmap-Darstellung nicht.
+            Gib zuerst Name und Slug ein (wird für den GeoServer-SQL im nächsten Schritt benötigt),
+            dann importiere die LOR-Daten als Superuser in die Datenbank.
           </div>
 
           <div class="form-grid">
@@ -267,44 +280,9 @@ CROSS JOIN drink_meta dm`;
             </label>
             <label>
               Slug (URL-Name) *
-              <input type="text" bind:value={form.slug} placeholder="hamburg" />
+              <input type="text" bind:value={form.slug} oninput={() => { form.wms_layer = `spritzmap:lor_index_${form.slug}`; }} placeholder="hamburg" />
               <small>Kleinbuchstaben, Bindestriche — wird auto-generiert</small>
             </label>
-            <label class="full">
-              Bbox * <small>(min_lat, min_lon, max_lat, max_lon)</small>
-              <input type="text" bind:value={form.bbox} placeholder="53.3951,9.7319,53.9644,10.3252" />
-            </label>
-            <label>
-              Zentrum Breitengrad *
-              <input type="number" step="0.0001" bind:value={form.center_lat} placeholder="53.55" />
-            </label>
-            <label>
-              Zentrum Längengrad *
-              <input type="number" step="0.0001" bind:value={form.center_lon} placeholder="10.0" />
-            </label>
-            <label>
-              Standard-Zoom
-              <input type="number" min="8" max="18" bind:value={form.default_zoom} />
-              <small>12 ist ein guter Startwert für Großstädte</small>
-            </label>
-          </div>
-
-          <div class="wizard-actions">
-            <button class="btn-outline" onclick={() => { showWizard = false; formError = ''; }}>Abbrechen</button>
-            <button class="btn-primary" disabled={saving} onclick={saveStep1}>
-              {saving ? 'Speichern…' : 'Stadt anlegen & weiter →'}
-            </button>
-          </div>
-        </div>
-
-      <!-- Step 2: Import LOR districts -->
-      {:else if wizardStep === 2}
-        <div class="wizard-card">
-          <h2>Schritt 2 — Bezirksgrenzen (LOR) in die Datenbank importieren</h2>
-
-          <div class="info-box info-important">
-            <strong>Pflichtschritt:</strong> Ohne Bezirksgrenzen funktioniert die Heatmap-Darstellung nicht.
-            Die Daten müssen einmalig als Superuser in die <code>public.lor</code>-Tabelle eingespielt werden.
           </div>
 
           <div class="steps-list">
@@ -344,59 +322,22 @@ CROSS JOIN drink_meta dm`;
           </div>
 
           <div class="wizard-actions">
-            <button class="btn-outline" onclick={() => { wizardStep = 1; }}>← Zurück</button>
-            <button class="btn-primary" onclick={() => { wizardStep = 3; }}>
+            <button class="btn-outline" onclick={() => { showWizard = false; formError = ''; }}>Abbrechen</button>
+            <button class="btn-primary" onclick={advanceStep1}>
               LOR importiert — weiter →
             </button>
           </div>
         </div>
 
-      <!-- Step 3: OSM Sync -->
-      {:else if wizardStep === 3}
+      <!-- Step 2: GeoServer setup -->
+      {:else if wizardStep === 2}
         <div class="wizard-card">
-          <h2>Schritt 3 — Bars & Restaurants aus OpenStreetMap importieren</h2>
+          <h2>Schritt 2 — GeoServer-Layer einrichten</h2>
 
           <div class="info-box">
-            Der OSM-Sync lädt automatisch alle Bars, Restaurants, Cafés und Biergärten
-            aus dem angegebenen Bbox-Bereich. Das kann bei großen Städten
-            1–2 Minuten dauern.
-          </div>
-
-          <div class="steps-list">
-            <div class="step-item">
-              <div class="step-num">1</div>
-              <div>
-                <strong>Sync jetzt starten</strong><br>
-                Klicke auf den Button — der Import läuft im Hintergrund.
-                Du kannst die Seite danach normal weiternutzen.
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">2</div>
-              <div>
-                <strong>Ergebnis prüfen</strong><br>
-                Nach dem Sync erscheinen die Locations auf der Karte (Stadtauswahl erforderlich, falls noch nicht vorhanden).
-                Der automatische Sync läuft danach täglich.
-              </div>
-            </div>
-          </div>
-
-          <div class="wizard-actions">
-            <button class="btn-outline" onclick={() => { wizardStep = 2; }}>← Zurück</button>
-            <button class="btn-primary" onclick={startOsmSync} disabled={syncingId === newCityId}>
-              {syncingId === newCityId ? 'Sync läuft…' : 'OSM-Sync starten & weiter →'}
-            </button>
-          </div>
-        </div>
-
-      <!-- Step 4: GeoServer -->
-      {:else if wizardStep === 4}
-        <div class="wizard-card">
-          <h2>Schritt 4 — GeoServer-Layer einrichten</h2>
-
-          <div class="info-box">
-            Jede Stadt bekommt einen eigenen GeoServer-Layer mit einer SQL-View, die nur die Bezirke
-            dieser Stadt anzeigt. Der fertige SQL-Code ist unten bereits generiert — du musst ihn nur kopieren.
+            Jede Stadt bekommt einen eigenen GeoServer-Layer. Nach dem Einrichten liest du die
+            Bounding Box der importierten LOR-Daten direkt aus GeoServer ab — diese Werte
+            übernimmst du dann bequem im nächsten Schritt.
           </div>
 
           <div class="steps-list">
@@ -413,7 +354,7 @@ CROSS JOIN drink_meta dm`;
               <div>
                 <strong>Layer-Name vergeben</strong><br>
                 Name des neuen Layers: <code>lor_index_{form.slug || 'CITY_SLUG'}</code><br>
-                <small>Der vollständige Layer-Name lautet dann <code>spritzmap:lor_index_{form.slug || 'CITY_SLUG'}</code></small>
+                <small>Vollständiger Layer-Name: <code>spritzmap:lor_index_{form.slug || 'CITY_SLUG'}</code></small>
               </div>
             </div>
             <div class="step-item">
@@ -421,7 +362,6 @@ CROSS JOIN drink_meta dm`;
               <div>
                 <strong>SQL-View einfügen</strong><br>
                 Kopiere den generierten SQL-Code und füge ihn als SQL-View ein.
-                Der <code>drink_id</code>-Parameter ist bereits als <code>viewparam</code> vordefiniert.
                 <div class="code-header">
                   <span>SQL für Layer <code>lor_index_{form.slug || 'CITY_SLUG'}</code></span>
                   <button class="btn-copy" onclick={copyGeoserverSql}>
@@ -435,7 +375,7 @@ CROSS JOIN drink_meta dm`;
               <div class="step-num">4</div>
               <div>
                 <strong>Viewparam registrieren</strong><br>
-                Im GeoServer-Formular unter „SQL View Parameters" eintragen:<br>
+                Unter „SQL View Parameters" eintragen:<br>
                 Name: <code>drink_id</code> — Default: <code>1</code> — Validator: <code>^[\d]+$</code>
               </div>
             </div>
@@ -443,21 +383,144 @@ CROSS JOIN drink_meta dm`;
               <div class="step-num">5</div>
               <div>
                 <strong>Geometrie-Attribut konfigurieren</strong><br>
-                Klicke „Refresh" → Geometry-Typ auf <code>MultiPolygon</code> setzen → SRID auf <code>25833</code> (Berlin) oder den SRID deiner LOR-Daten.
+                „Refresh" klicken → Geometry-Typ auf <code>MultiPolygon</code> setzen → SRID auf den SRID deiner LOR-Daten.
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-num">6</div>
+              <div>
+                <strong>Bounding Box aus GeoServer ablesen</strong><br>
+                Layer speichern → Layer-Liste → Layer anklicken → Tab <strong>„Publishing"</strong> → Abschnitt
+                <strong>„Bounding Boxes"</strong><br>
+                → <strong>„Compute from data"</strong> und <strong>„Compute from native bounds"</strong> klicken.<br>
+                Die <strong>Lat/Lon Bounding Box</strong> liefert die Koordinaten für den nächsten Schritt:
+                <div class="bbox-guide">
+                  <div class="bbox-row"><span class="bbox-key">Min X</span><span class="bbox-arrow">→</span><span class="bbox-val">min_lon (2. Wert im Bbox-Feld)</span></div>
+                  <div class="bbox-row"><span class="bbox-key">Min Y</span><span class="bbox-arrow">→</span><span class="bbox-val">min_lat (1. Wert im Bbox-Feld)</span></div>
+                  <div class="bbox-row"><span class="bbox-key">Max X</span><span class="bbox-arrow">→</span><span class="bbox-val">max_lon (4. Wert im Bbox-Feld)</span></div>
+                  <div class="bbox-row"><span class="bbox-key">Max Y</span><span class="bbox-arrow">→</span><span class="bbox-val">max_lat (3. Wert im Bbox-Feld)</span></div>
+                </div>
+                Format für nächsten Schritt: <code>min_lat, min_lon, max_lat, max_lon</code>
               </div>
             </div>
           </div>
 
-          <label class="wms-label">
-            WMS-Layer-Name (wird in der Datenbank gespeichert)
-            <input type="text" bind:value={form.wms_layer} placeholder={`spritzmap:lor_index_${form.slug || 'CITY_SLUG'}`} />
-            <small>Standard: <code>spritzmap:lor_index_{form.slug || 'CITY_SLUG'}</code> — nur ändern wenn du einen anderen Namen vergeben hast</small>
-          </label>
+          <div class="wizard-actions">
+            <button class="btn-outline" onclick={() => { wizardStep = 1; }}>← Zurück</button>
+            <button class="btn-primary" onclick={() => { wizardStep = 3; }}>
+              GeoServer eingerichtet — weiter →
+            </button>
+          </div>
+        </div>
+
+      <!-- Step 3: Grunddaten (creates DB record) -->
+      {:else if wizardStep === 3}
+        <div class="wizard-card">
+          <h2>Schritt 3 — Grunddaten</h2>
+
+          {#if !step3Done}
+            <div class="info-box">
+              Trage jetzt die Koordinaten ein. Die Bbox-Werte hast du in Schritt 2 aus GeoServer abgelesen.
+              Klicke „Stadt anlegen" — danach wird der Datenbank-Eintrag erstellt und du siehst das SQL
+              zum Verknüpfen der LOR-Daten.
+            </div>
+
+            <div class="form-grid">
+              <label class="full">
+                Bbox * <small>(min_lat, min_lon, max_lat, max_lon — aus GeoServer Min Y, Min X, Max Y, Max X)</small>
+                <input type="text" bind:value={form.bbox} placeholder="53.3951,9.7319,53.9644,10.3252" />
+              </label>
+              <label>
+                Zentrum Breitengrad *
+                <input type="number" step="0.0001" bind:value={form.center_lat} placeholder="53.55" />
+              </label>
+              <label>
+                Zentrum Längengrad *
+                <input type="number" step="0.0001" bind:value={form.center_lon} placeholder="10.0" />
+              </label>
+              <label>
+                Standard-Zoom
+                <input type="number" min="8" max="18" bind:value={form.default_zoom} />
+                <small>12 ist ein guter Startwert für Großstädte</small>
+              </label>
+              <label>
+                WMS-Layer-Name
+                <input type="text" bind:value={form.wms_layer} placeholder={`spritzmap:lor_index_${form.slug || 'CITY_SLUG'}`} />
+                <small>Standard: <code>spritzmap:lor_index_{form.slug || 'CITY_SLUG'}</code></small>
+              </label>
+            </div>
+
+            <div class="wizard-actions">
+              <button class="btn-outline" onclick={() => { wizardStep = 2; }}>← Zurück</button>
+              <button class="btn-primary" disabled={saving} onclick={saveStep3}>
+                {saving ? 'Anlegen…' : 'Stadt anlegen →'}
+              </button>
+            </div>
+
+          {:else}
+            <div class="info-box" style="border-color: #16a34a; background: #f0fdf4; color: #166534;">
+              <strong>✓ Stadt angelegt!</strong> ID: {newCityId} — Verknüpfe jetzt die LOR-Daten mit der neuen Stadt:
+            </div>
+
+            <div class="steps-list">
+              <div class="step-item">
+                <div class="step-num">1</div>
+                <div>
+                  <strong>LOR-Daten verknüpfen</strong><br>
+                  Führe dieses SQL in der Coolify-DB-Konsole aus:
+                  <div class="code-header">
+                    <span>LOR → Stadt {form.name} verknüpfen</span>
+                    <button class="btn-copy" onclick={copyLorLinkSql}>
+                      {copiedLorLink ? '✓ Kopiert!' : 'Kopieren'}
+                    </button>
+                  </div>
+                  <pre class="code-block">{lorLinkSnippet()}</pre>
+                  <small>Setzt alle LOR-Einträge ohne city_id auf die neue Stadt. Falls bereits andere Städte vorhanden sind, WHERE-Klausel anpassen.</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="wizard-actions">
+              <button class="btn-primary" onclick={() => { wizardStep = 4; }}>
+                LOR verknüpft — weiter →
+              </button>
+            </div>
+          {/if}
+        </div>
+
+      <!-- Step 4: OSM Sync -->
+      {:else if wizardStep === 4}
+        <div class="wizard-card">
+          <h2>Schritt 4 — Bars & Restaurants aus OpenStreetMap importieren</h2>
+
+          <div class="info-box">
+            Der OSM-Sync lädt automatisch alle Bars, Restaurants, Cafés und Biergärten
+            aus dem angegebenen Bbox-Bereich. Das kann bei großen Städten 1–2 Minuten dauern.
+          </div>
+
+          <div class="steps-list">
+            <div class="step-item">
+              <div class="step-num">1</div>
+              <div>
+                <strong>Sync jetzt starten</strong><br>
+                Klicke auf „OSM-Sync starten" — der Import läuft im Hintergrund.
+                Der Wizard schließt sich, du siehst eine Statusmeldung auf der Seite.
+              </div>
+            </div>
+            <div class="step-item">
+              <div class="step-num">2</div>
+              <div>
+                <strong>Ergebnis prüfen</strong><br>
+                Nach dem Sync erscheinen die Locations auf der Karte (Stadtauswahl erforderlich).
+                Der automatische Sync läuft danach täglich.
+              </div>
+            </div>
+          </div>
 
           <div class="wizard-actions">
             <button class="btn-outline" onclick={() => { wizardStep = 3; }}>← Zurück</button>
-            <button class="btn-primary" disabled={saving} onclick={saveStep4}>
-              {saving ? 'Speichern…' : 'Fertigstellen ✓'}
+            <button class="btn-primary" onclick={startOsmSync}>
+              OSM-Sync starten & Fertigstellen ✓
             </button>
           </div>
         </div>
@@ -627,8 +690,6 @@ CROSS JOIN drink_meta dm`;
     color: #7c2d12;
   }
 
-  .info-box a { color: #0ea5e9; }
-
   .code-header {
     display: flex;
     align-items: center;
@@ -742,23 +803,35 @@ CROSS JOIN drink_meta dm`;
     white-space: pre;
   }
 
-  .wms-label {
+  /* Bbox mapping guide */
+  .bbox-guide {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: #555;
-    margin-bottom: 1.25rem;
-  }
-  .wms-label input {
-    max-width: 320px;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid #ddd;
+    margin: 0.6rem 0 0.4rem;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
     border-radius: 6px;
-    font-size: 0.875rem;
-    font-family: inherit;
+    padding: 0.6rem 0.75rem;
   }
+
+  .bbox-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8rem;
+  }
+
+  .bbox-key {
+    font-family: monospace;
+    font-weight: 700;
+    color: #1a1a2e;
+    min-width: 50px;
+  }
+
+  .bbox-arrow { color: #94a3b8; }
+
+  .bbox-val { color: #475569; }
 
   .wizard-actions {
     display: flex;
