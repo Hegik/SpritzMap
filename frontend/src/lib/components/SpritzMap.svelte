@@ -235,6 +235,15 @@
     return html;
   }
 
+  const INTENSITY_LABELS = ['Fast nur Sekt', 'sehr lasch', 'lasch', 'ok', 'gut gemeint', 'stark', 'Sekt, wo?'];
+
+  function buildIntensityBarHtml(colorValue: number, colorHex: string): string {
+    const leftPct = (colorValue / 255) * 100;
+    const segmentIndex = Math.min(Math.floor((colorValue / 255) * 7), 6);
+    const label = INTENSITY_LABELS[segmentIndex];
+    return `<div class="popup-intensity"><div class="popup-intensity-track"><div class="popup-intensity-dot" style="left:${leftPct.toFixed(1)}%;background:${colorHex};"></div></div><div class="popup-intensity-label">${label}</div></div>`;
+  }
+
   async function showPopup(e: any) {
     const feature = e.features?.[0];
     if (!feature) return;
@@ -253,6 +262,7 @@
     if (props.popup_type === 'priced') {
       const popupIconHtml = buildIconHtml(props.drink_color_hex, props.avg_color_value, 200);
       html += `<div style="display:flex;justify-content:center;margin:6px 0;">${popupIconHtml}</div>`;
+      html += buildIntensityBarHtml(props.avg_color_value, props.drink_color_hex);
       html += `${props.drink_name} — <b>${Number(props.price).toFixed(2)} €</b>`;
       html += buildOtherDrinksHtml(allPrices, props.drink_id);
       html += `<div class="popup-meta">${$t.map.popup_reported_by(props.reported_by, props.reported_at)}</div>`;
@@ -642,6 +652,37 @@
 
   :global(.maplibregl-popup-tip) {
     display: none;
+  }
+
+  :global(.popup-intensity) {
+    margin: 2px 0 8px;
+  }
+
+  :global(.popup-intensity-track) {
+    position: relative;
+    height: 4px;
+    background: #e0e0e0;
+    border-radius: 2px;
+    margin: 0 6px;
+  }
+
+  :global(.popup-intensity-dot) {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  }
+
+  :global(.popup-intensity-label) {
+    text-align: center;
+    font-size: 0.72rem;
+    color: #888;
+    margin-top: 5px;
+    font-style: italic;
   }
 
   :global(.maplibregl-popup-close-button) {
