@@ -14,6 +14,8 @@
   let map: Map;
   let popup: Popup;
   let watchId: number | null = null;
+  let userLocationInitialized = false;
+  let userLocationInitializing = false;
 
   export function reloadMarkers() {
     const city = $selectedCity;
@@ -254,66 +256,84 @@
       type: 'FeatureCollection',
       features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [longitude, latitude] }, properties: {} }],
     };
-    const src = map.getSource('user-location') as GeoJSONSource | undefined;
-    if (src) {
-      src.setData(fc);
-    } else {
-      // Draw dot onto canvas so icon-pitch-alignment:'map' makes it oval when map is tilted
-      const size = 72;
-      const canvas = document.createElement('canvas');
-      canvas.width = size;
-      canvas.height = size;
-      const ctx = canvas.getContext('2d')!;
-      const cx = size / 2, cy = size / 2, r = 24;
-      ctx.shadowColor = 'rgba(0,0,0,0.35)';
-      ctx.shadowBlur = 10;
-      ctx.shadowOffsetY = 3;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = '#e8500a';
-      ctx.fill();
-      ctx.shadowColor = 'transparent';
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetY = 0;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 5;
-      ctx.stroke();
 
-      const dotImg = await new Promise<HTMLImageElement>((resolve) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.src = canvas.toDataURL();
-      });
-
-      map.addSource('user-location', { type: 'geojson', data: fc });
-      if (!map.hasImage('user-location-dot')) map.addImage('user-location-dot', dotImg);
-      map.addLayer({
-        id: 'user-location-layer',
-        type: 'symbol',
-        source: 'user-location',
-        layout: {
-          'icon-image': 'user-location-dot',
-          'icon-size': 0.45,
-          'icon-allow-overlap': true,
-          'icon-pitch-alignment': 'map',
-          'icon-rotation-alignment': 'map',
-        } as any,
-      });
+    if (userLocationInitialized) {
+      (map.getSource('user-location') as GeoJSONSource).setData(fc);
+      return;
     }
+    if (userLocationInitializing) return;
+    userLocationInitializing = true;
+
+    // Draw dot onto canvas so icon-pitch-alignment:'map' makes it oval when map is tilted
+    const size = 72;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const cx = size / 2, cy = size / 2, r = 24;
+    ctx.shadowColor = 'rgba(0,0,0,0.35)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8500a';
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 5;
+    ctx.stroke();
+
+    const dotImg = await new Promise<HTMLImageElement>((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.src = canvas.toDataURL();
+    });
+
+    map.addSource('user-location', { type: 'geojson', data: fc });
+    if (!map.hasImage('user-location-dot')) map.addImage('user-location-dot', dotImg);
+    map.addLayer({
+      id: 'user-location-layer',
+      type: 'symbol',
+      source: 'user-location',
+      layout: {
+        'icon-image': 'user-location-dot',
+        'icon-size': 0.45,
+        'icon-allow-overlap': true,
+        'icon-pitch-alignment': 'map',
+        'icon-rotation-alignment': 'map',
+      } as any,
+    });
+
+    userLocationInitialized = true;
+    userLocationInitializing = false;
   }
 
   function locateUser() {
-    if (watchId === null) {
-      watchId = navigator.geolocation.watchPosition(updateUserLocation, () => {});
+    if (watchId !== null) {
+      // Already watching — just fly to current position
+      navigator.geolocation.getCurrentPosition(
+        (pos) => map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 17 }),
+        () => {},
+        { enableHighAccuracy: true, timeout: 10000 },
+      );
+      return;
     }
-    navigator.geolocation.getCurrentPosition(
+
+    let didFly = false;
+    watchId = navigator.geolocation.watchPosition(
       (pos) => {
         updateUserLocation(pos);
-        map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 17 });
+        if (!didFly) {
+          didFly = true;
+          map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 17 });
+        }
       },
       () => {},
+      { enableHighAccuracy: true, timeout: 10000 },
     );
   }
 

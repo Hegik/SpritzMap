@@ -6,7 +6,7 @@ Diese Karte soll nicht zum Trinken animieren, sondern ledigleich eine Preisüber
 # Nur frisch gemixt!
 Auch wenn es inzwischen überall fertig gemischte Spritz-Getränke gibt und diese für einen Tag im Park bestimmt optimal sind, soll sie **nicht** in dieser Karte eingetragen werden. 
 
-Ein echte Spritz wird frisch gemischt!
+Ein echter Spritz wird frisch gemischt!
 
 # Mitmachen lohnt sich!
 Lege ein Konto an und trage eigene Preise ein – gemeinsam bauen wir die vollständigste Spritz-Karte Berlins.
