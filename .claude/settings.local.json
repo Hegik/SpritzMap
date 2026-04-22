@@ -11,7 +11,8 @@
       "Bash(curl -s \"https://geoserver.hegik.de/geoserver/spritzmap/ows?service=WFS&version=1.0.0&request=GetFeature&typeName=spritzmap:lor_price_summary&maxFeatures=600&viewparams=drink_id:1\")",
       "Bash(npm uninstall:*)",
       "WebFetch(domain:sgx.geodatenzentrum.de)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(xargs wc *)"
     ]
   }
 }

@@ -60,6 +60,15 @@ const de = {
     error: 'Anleitung konnte nicht geladen werden.',
   },
 
+  // Splash Modal
+  splash: {
+    btn_aria: 'Tipps & Willkommen',
+    close_aria: 'Schließen',
+    not_again: 'Nicht wieder anzeigen',
+    btn_close: 'Schließen',
+    error: 'Inhalt konnte nicht geladen werden.',
+  },
+
   // Map Popups
   map: {
     locate: 'Mein Standort',

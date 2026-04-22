@@ -4,6 +4,7 @@
   import { getGlassIconDataUrl, getEmptyGlassDataUrl, getNodataGlassDataUrl, buildIconHtml } from '$lib/utils/markerIcon';
   import PriceSubmitModal from '$lib/components/PriceSubmitModal.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
+  import SplashModal from '$lib/components/SplashModal.svelte';
   import { isLoggedIn } from '$lib/stores/auth';
   import { t } from '$lib/i18n';
   import type { Map, Popup, GeoJSONSource } from 'maplibre-gl';
@@ -12,6 +13,7 @@
   let mapEl: HTMLDivElement;
   let map: Map;
   let popup: Popup;
+  let watchId: number | null = null;
 
   export function reloadMarkers() {
     const city = $selectedCity;
@@ -23,6 +25,7 @@
   let submitLocationName = $state('');
   let submitIsEmpty = $state(false);
   let helpOpen = $state(false);
+  let splashOpen = $state(false);
 
   const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -244,6 +247,56 @@
     return `<div class="popup-intensity"><div class="popup-intensity-title">Aperol-Anteil</div><div class="popup-intensity-track" style="background:${colorHex}20;"><div class="popup-intensity-dot" style="left:${leftPct.toFixed(1)}%;background:${colorHex};"></div></div><div class="popup-intensity-label">${label}</div></div>`;
   }
 
+  function updateUserLocation(pos: GeolocationPosition) {
+    if (!map) return;
+    const { longitude, latitude } = pos.coords;
+    const fc: GeoJSON.FeatureCollection = {
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [longitude, latitude] }, properties: {} }],
+    };
+    const src = map.getSource('user-location') as GeoJSONSource | undefined;
+    if (src) {
+      src.setData(fc);
+    } else {
+      map.addSource('user-location', { type: 'geojson', data: fc });
+      map.addLayer({
+        id: 'user-location-shadow',
+        type: 'circle',
+        source: 'user-location',
+        paint: {
+          'circle-radius': 11,
+          'circle-color': 'rgba(0,0,0,0.18)',
+          'circle-translate': [0, 2.5],
+          'circle-blur': 0.6,
+        },
+      });
+      map.addLayer({
+        id: 'user-location-dot',
+        type: 'circle',
+        source: 'user-location',
+        paint: {
+          'circle-radius': 8,
+          'circle-color': '#e8500a',
+          'circle-stroke-width': 2.5,
+          'circle-stroke-color': 'white',
+        },
+      });
+    }
+  }
+
+  function locateUser() {
+    if (watchId === null) {
+      watchId = navigator.geolocation.watchPosition(updateUserLocation, () => {});
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        updateUserLocation(pos);
+        map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 17 });
+      },
+      () => {},
+    );
+  }
+
   async function showPopup(e: any) {
     const feature = e.features?.[0];
     if (!feature) return;
@@ -381,6 +434,15 @@
         await loadMarkers(initialCity, $selectedDrinkId, $selectedPriceTier);
       }
 
+      // Auto-show position if permission already granted
+      if (navigator.permissions) {
+        navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+          if (result.state === 'granted') {
+            watchId = navigator.geolocation.watchPosition(updateUserLocation, () => {});
+          }
+        });
+      }
+
       // Subscribe after map is ready — first call fires immediately with current value
       const updateWms = (drinkId: number | null) => {
         const src = map.getSource('wms-lor') as any;
@@ -414,6 +476,10 @@
     });
     })();
 
+    if (!localStorage.getItem('spritzmap_splash_seen') && !localStorage.getItem('token')) {
+      splashOpen = true;
+    }
+
     return () => {
       unsubDrink?.();
       unsubTier?.();
@@ -423,6 +489,7 @@
 
   onDestroy(() => {
     map?.remove();
+    if (watchId !== null) navigator.geolocation.clearWatch(watchId);
   });
 </script>
 
@@ -448,17 +515,11 @@
   <button class="zoom-btn" title="Verkleinern" onclick={() => map?.zoomOut()}>−</button>
 </div>
 
-<button
-  class="locate-btn"
-  title={$t.map.locate}
-  onclick={() => {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 17 }),
-      () => {}
-    );
-  }}
->
-  ◎
+<button class="locate-btn" title={$t.map.locate} onclick={locateUser}>
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+    <circle cx="9" cy="9" r="6.5" stroke="white" stroke-width="2"/>
+    <circle cx="9" cy="9" r="2.5" fill="white"/>
+  </svg>
 </button>
 
 <button
@@ -469,7 +530,16 @@
   ?
 </button>
 
+<button
+  class="splash-btn"
+  aria-label={$t.splash.btn_aria}
+  onclick={() => (splashOpen = true)}
+>
+  !
+</button>
+
 <HelpModal bind:open={helpOpen} />
+<SplashModal bind:open={splashOpen} />
 
 <PriceSubmitModal
   bind:open={submitOpen}
@@ -580,9 +650,16 @@
     font-weight: 700;
   }
 
+  .splash-btn {
+    left: calc(0.65rem + 34px + 8px + 34px + 8px);
+    font-size: 1rem;
+    font-weight: 700;
+  }
+
   @media (max-width: 640px) {
     .locate-btn,
-    .help-btn {
+    .help-btn,
+    .splash-btn {
       bottom: 4.5rem;
     }
 
@@ -592,7 +669,8 @@
   }
 
   .locate-btn:hover,
-  .help-btn:hover { background: #d04508; }
+  .help-btn:hover,
+  .splash-btn:hover { background: #d04508; }
 
   :global(.popup-btn) {
     margin-top: 6px;
