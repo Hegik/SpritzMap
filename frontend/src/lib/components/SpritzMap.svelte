@@ -247,7 +247,7 @@
     return `<div class="popup-intensity"><div class="popup-intensity-title">Aperol-Anteil</div><div class="popup-intensity-track" style="background:${colorHex}20;"><div class="popup-intensity-dot" style="left:${leftPct.toFixed(1)}%;background:${colorHex};"></div></div><div class="popup-intensity-label">${label}</div></div>`;
   }
 
-  function updateUserLocation(pos: GeolocationPosition) {
+  async function updateUserLocation(pos: GeolocationPosition) {
     if (!map) return;
     const { longitude, latitude } = pos.coords;
     const fc: GeoJSON.FeatureCollection = {
@@ -258,28 +258,48 @@
     if (src) {
       src.setData(fc);
     } else {
-      map.addSource('user-location', { type: 'geojson', data: fc });
-      map.addLayer({
-        id: 'user-location-shadow',
-        type: 'circle',
-        source: 'user-location',
-        paint: {
-          'circle-radius': 11,
-          'circle-color': 'rgba(0,0,0,0.18)',
-          'circle-translate': [0, 2.5],
-          'circle-blur': 0.6,
-        },
+      // Draw dot onto canvas so icon-pitch-alignment:'map' makes it oval when map is tilted
+      const size = 72;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d')!;
+      const cx = size / 2, cy = size / 2, r = 24;
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetY = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = '#e8500a';
+      ctx.fill();
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 5;
+      ctx.stroke();
+
+      const dotImg = await new Promise<HTMLImageElement>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.src = canvas.toDataURL();
       });
+
+      map.addSource('user-location', { type: 'geojson', data: fc });
+      if (!map.hasImage('user-location-dot')) map.addImage('user-location-dot', dotImg);
       map.addLayer({
-        id: 'user-location-dot',
-        type: 'circle',
+        id: 'user-location-layer',
+        type: 'symbol',
         source: 'user-location',
-        paint: {
-          'circle-radius': 8,
-          'circle-color': '#e8500a',
-          'circle-stroke-width': 2.5,
-          'circle-stroke-color': 'white',
-        },
+        layout: {
+          'icon-image': 'user-location-dot',
+          'icon-size': 0.45,
+          'icon-allow-overlap': true,
+          'icon-pitch-alignment': 'map',
+          'icon-rotation-alignment': 'map',
+        } as any,
       });
     }
   }
@@ -585,7 +605,8 @@
   }
 
   .locate-btn,
-  .help-btn {
+  .help-btn,
+  .splash-btn {
     position: absolute;
     bottom: 1.5rem;
     z-index: 5;

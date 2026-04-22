@@ -287,8 +287,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.25);
-    padding-top: 1rem;
+    padding-top: 0.25rem;
     margin-top: 0.25rem;
   }
 
@@ -302,9 +301,33 @@
     flex-shrink: 0;
   }
 
-  .not-again input {
-    accent-color: white;
+  .not-again input[type='checkbox'] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid white;
+    border-radius: 3px;
+    background: transparent;
     cursor: pointer;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .not-again input[type='checkbox']:checked {
+    background: white;
+  }
+
+  .not-again input[type='checkbox']:checked::after {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: -1px;
+    width: 8px;
+    height: 5px;
+    border-left: 2.5px solid #e8500a;
+    border-bottom: 2.5px solid #e8500a;
+    transform: rotate(-45deg);
   }
 
   .btn-close {
