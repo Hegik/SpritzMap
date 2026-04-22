@@ -5,6 +5,7 @@
   import { api } from '$lib/api/client';
   import { t } from '$lib/i18n';
   import AppHeader from '$lib/components/AppHeader.svelte';
+  import { buildIconHtml } from '$lib/utils/markerIcon';
 
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -28,10 +29,66 @@
   let deleteStatus = $state<'idle' | 'loading'>('idle');
   let deleteError = $state('');
 
+  // ── Meine Einträge ───────────────────────────────────────────
+  const ENTRIES_PAGE_SIZE = 12;
+
+  interface EntryItem {
+    id: number;
+    location_id: number;
+    location_name: string;
+    drink_id: number;
+    drink_name: string;
+    drink_color_hex: string;
+    price: number;
+    price_tier: string | null;
+    color_value: number;
+    reported_at: string;
+    note: string | null;
+    unavailable: boolean;
+    is_current: boolean;
+  }
+
+  let entries = $state<EntryItem[]>([]);
+  let entriesTotal = $state(0);
+  let entriesPage = $state(1);
+  let entriesLoading = $state(false);
+  let deleteEntryTarget = $state<EntryItem | null>(null);
+  let deleteEntryStatus = $state<'idle' | 'loading'>('idle');
+
+  async function loadEntries(page = 1) {
+    entriesLoading = true;
+    try {
+      const data = await api.get<{ total: number; page: number; items: EntryItem[] }>(
+        `/auth/me/entries?page=${page}&page_size=${ENTRIES_PAGE_SIZE}`,
+      );
+      entries = data.items;
+      entriesTotal = data.total;
+      entriesPage = page;
+    } finally {
+      entriesLoading = false;
+    }
+  }
+
+  async function confirmDeleteEntry() {
+    if (!deleteEntryTarget) return;
+    deleteEntryStatus = 'loading';
+    try {
+      await api.delete(`/prices/${deleteEntryTarget.id}`);
+      deleteEntryTarget = null;
+      // stay on current page, but step back if it becomes empty
+      const newTotal = entriesTotal - 1;
+      const maxPage = Math.max(1, Math.ceil(newTotal / ENTRIES_PAGE_SIZE));
+      await loadEntries(Math.min(entriesPage, maxPage));
+    } finally {
+      deleteEntryStatus = 'idle';
+    }
+  }
+
   onMount(() => {
     if (!$isLoggedIn) { goto('/'); return; }
     profileUsername = $user?.username ?? '';
     profileEmail = $user?.email ?? '';
+    loadEntries(1);
   });
 
   function startEdit() {
@@ -195,6 +252,68 @@
       </form>
     </section>
 
+    <!-- ── Meine Einträge ── -->
+    <section class="card entries-card">
+      <h2>{$t.account.section_entries}</h2>
+
+      {#if entriesLoading}
+        <p class="info">Lade…</p>
+      {:else if entries.length === 0}
+        <p class="info">{$t.account.entries_empty}</p>
+      {:else}
+        <div class="entries-grid">
+          {#each entries as entry (entry.id)}
+            <div class="entry-card">
+              <button
+                class="entry-delete-btn"
+                aria-label="Eintrag löschen"
+                onclick={() => (deleteEntryTarget = entry)}
+              >✕</button>
+
+              <div class="entry-icon">
+                {@html buildIconHtml(entry.drink_color_hex, entry.color_value, 80)}
+              </div>
+
+              <div class="entry-info">
+                <strong class="entry-location">{entry.location_name}</strong>
+                <span class="entry-drink">{entry.drink_name}</span>
+                {#if entry.unavailable}
+                  <span class="entry-price unavail">{$t.account.entries_unavailable}</span>
+                {:else}
+                  <span class="entry-price">
+                    {entry.price.toFixed(2)} €
+                    {#if entry.price_tier}<span class="entry-tier">{entry.price_tier}</span>{/if}
+                  </span>
+                {/if}
+                {#if entry.note}
+                  <span class="entry-note">„{entry.note}"</span>
+                {/if}
+                <time class="entry-date">
+                  {new Date(entry.reported_at).toLocaleDateString('de-DE')}
+                </time>
+              </div>
+            </div>
+          {/each}
+        </div>
+
+        {#if entriesTotal > ENTRIES_PAGE_SIZE}
+          <div class="pagination">
+            <button
+              class="btn-ghost pag-btn"
+              disabled={entriesPage <= 1}
+              onclick={() => loadEntries(entriesPage - 1)}
+            >{$t.account.entries_page_prev}</button>
+            <span class="pag-label">{entriesPage} / {Math.ceil(entriesTotal / ENTRIES_PAGE_SIZE)}</span>
+            <button
+              class="btn-ghost pag-btn"
+              disabled={entriesPage >= Math.ceil(entriesTotal / ENTRIES_PAGE_SIZE)}
+              onclick={() => loadEntries(entriesPage + 1)}
+            >{$t.account.entries_page_next}</button>
+          </div>
+        {/if}
+      {/if}
+    </section>
+
     <!-- ── Meine Daten ── -->
     <section class="card">
       <h2>{$t.account.section_data}</h2>
@@ -213,6 +332,36 @@
 
   </div>
 </div>
+
+<!-- ── Eintrag löschen Dialog ── -->
+{#if deleteEntryTarget}
+  <div
+    class="overlay"
+    onclick={() => (deleteEntryTarget = null)}
+    onkeydown={(e) => e.key === 'Escape' && (deleteEntryTarget = null)}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+  >
+    <div
+      class="dialog"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+      role="presentation"
+    >
+      <h3>{$t.account.entries_delete_title}</h3>
+      <p>{$t.account.entries_delete_body(deleteEntryTarget.location_name)}</p>
+      <div class="btn-row">
+        <button class="btn-danger" onclick={confirmDeleteEntry} disabled={deleteEntryStatus === 'loading'}>
+          {deleteEntryStatus === 'loading' ? '…' : $t.account.entries_delete_confirm}
+        </button>
+        <button class="btn-ghost" onclick={() => (deleteEntryTarget = null)}>
+          {$t.account.btn_cancel}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <!-- ── Bestätigungsdialog ── -->
 {#if showDeleteConfirm}
@@ -253,12 +402,19 @@
   }
 
   .cards {
-    max-width: 560px;
+    max-width: 860px;
     margin: 0 auto;
     padding: 1.5rem 1rem 3rem;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+    align-items: stretch;
+  }
+
+  .card:not(.entries-card) {
+    max-width: 560px;
+    align-self: center;
+    width: 100%;
   }
 
   .card {
@@ -394,5 +550,150 @@
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+  }
+
+  /* Entries */
+  .entries-card {
+    max-width: 860px;
+    width: 100%;
+    align-self: center;
+  }
+
+  .entries-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  @media (max-width: 600px) {
+    .entries-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  .entry-card {
+    position: relative;
+    background: #fafafa;
+    border: 1.5px solid #ececec;
+    border-radius: 10px;
+    padding: 0.75rem 0.6rem 0.6rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    text-align: center;
+  }
+
+  .entry-delete-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: #e0e0e0;
+    color: #666;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    padding: 0;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .entry-delete-btn:hover {
+    background: #c0392b;
+    color: white;
+  }
+
+  .entry-icon {
+    flex-shrink: 0;
+  }
+
+  .entry-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+  }
+
+  .entry-location {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #222;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .entry-drink {
+    font-size: 0.75rem;
+    color: #888;
+  }
+
+  .entry-price {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #e8500a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+
+  .entry-price.unavail {
+    color: #aaa;
+    font-weight: 400;
+    font-style: italic;
+  }
+
+  .entry-tier {
+    font-size: 0.7rem;
+    color: #aaa;
+    font-weight: 400;
+  }
+
+  .entry-note {
+    font-size: 0.72rem;
+    color: #999;
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .entry-date {
+    font-size: 0.7rem;
+    color: #bbb;
+    margin-top: 2px;
+  }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+  }
+
+  .pag-btn {
+    padding: 6px 14px;
+    font-size: 0.85rem;
+  }
+
+  .pag-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .pag-label {
+    font-size: 0.85rem;
+    color: #666;
+    min-width: 50px;
+    text-align: center;
   }
 </style>

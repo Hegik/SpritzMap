@@ -110,6 +110,22 @@ async def update_price_entry(
     return _to_out(entry)
 
 
+@router.delete("/{entry_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_price_entry(
+    entry_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(PriceEntry).where(PriceEntry.id == entry_id))
+    entry = result.scalar_one_or_none()
+    if not entry:
+        raise HTTPException(status_code=404, detail="Price entry not found")
+    if entry.user_id != current_user.id and current_user.role not in ("moderator", "admin"):
+        raise HTTPException(status_code=403, detail="Not allowed")
+    await db.delete(entry)
+    await db.commit()
+
+
 @router.post("/{entry_id}/confirm", response_model=PriceEntryOut)
 async def confirm_price(
     entry_id: int,

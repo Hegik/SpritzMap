@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update as sa_update
+from sqlalchemy import select, update as sa_update, func
 from sqlalchemy.orm import selectinload
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -11,7 +11,10 @@ from app.core.database import get_db
 from app.core.security import verify_password, get_password_hash, create_access_token
 from app.models.user import User
 from app.models.price_entry import PriceEntry
+from app.models.location import Location
+from app.models.drink import Drink
 from app.models.user_deletion_log import UserDeletionLog
+from app.core.config import settings
 from app.schemas.user import UserRegister, UserOut, Token, ForgotPassword, ResetPassword, UpdateProfile, UpdatePassword
 from fastapi.responses import JSONResponse
 from app.api.deps import get_current_user
@@ -207,6 +210,53 @@ async def export_my_data(
         content=payload,
         headers={"Content-Disposition": 'attachment; filename="spritzmap-meine-daten.json"'},
     )
+
+
+@router.get("/me/entries")
+async def my_entries(
+    page: int = 1,
+    page_size: int = 12,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    offset = (page - 1) * page_size
+
+    total_result = await db.execute(
+        select(func.count()).select_from(PriceEntry).where(PriceEntry.user_id == current_user.id)
+    )
+    total = total_result.scalar() or 0
+
+    rows_result = await db.execute(
+        select(PriceEntry, Location, Drink)
+        .join(Location, PriceEntry.location_id == Location.id)
+        .join(Drink, PriceEntry.drink_id == Drink.id)
+        .where(PriceEntry.user_id == current_user.id)
+        .order_by(PriceEntry.reported_at.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
+    rows = rows_result.all()
+
+    items = [
+        {
+            "id": entry.id,
+            "location_id": entry.location_id,
+            "location_name": location.name,
+            "drink_id": entry.drink_id,
+            "drink_name": drink.name,
+            "drink_color_hex": drink.color_hex,
+            "price": entry.price,
+            "price_tier": settings.get_price_tier(entry.price) if not entry.unavailable else None,
+            "color_value": entry.color_value,
+            "reported_at": entry.reported_at.isoformat(),
+            "note": entry.note,
+            "unavailable": entry.unavailable,
+            "is_current": entry.is_current,
+        }
+        for entry, location, drink in rows
+    ]
+
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
 @router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
