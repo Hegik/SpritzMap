@@ -301,7 +301,7 @@
       source: 'user-location',
       layout: {
         'icon-image': 'user-location-dot',
-        'icon-size': 0.45,
+        'icon-size': 0.35,
         'icon-allow-overlap': true,
         'icon-pitch-alignment': 'map',
         'icon-rotation-alignment': 'map',
