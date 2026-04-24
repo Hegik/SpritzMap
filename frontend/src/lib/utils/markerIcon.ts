@@ -109,6 +109,20 @@ export async function getNodataGlassDataUrl(): Promise<string> {
   return getDataUrl('__nodata__', svgWithSize, 48);
 }
 
+// Glass without drink layer + red cross — for "unavailable" entries
+export function buildUnavailableIconHtml(sizePx: number): string {
+  const size = `width="${sizePx}" height="${sizePx}" style="position:absolute;top:0;left:0;"`;
+  const back = spritzBack.replace('<svg ', `<svg ${size} `);
+  const top = spritzTop.replace('<svg ', `<svg ${size} `);
+  const sw = Math.max(3, Math.round(sizePx * 0.06));
+  const pad = Math.round(sizePx * 0.13);
+  const cross = `<svg width="${sizePx}" height="${sizePx}" viewBox="0 0 ${sizePx} ${sizePx}" style="position:absolute;top:0;left:0;">
+    <line x1="${pad}" y1="${pad}" x2="${sizePx - pad}" y2="${sizePx - pad}" stroke="#d03030" stroke-width="${sw}" stroke-linecap="round" opacity="0.65"/>
+    <line x1="${sizePx - pad}" y1="${pad}" x2="${pad}" y2="${sizePx - pad}" stroke="#d03030" stroke-width="${sw}" stroke-linecap="round" opacity="0.65"/>
+  </svg>`;
+  return `<div style="position:relative;width:${sizePx}px;height:${sizePx}px;">${back}${top}${cross}</div>`;
+}
+
 // Synchronous HTML for popups (not performance-critical)
 export function buildIconHtml(colorHex: string, colorValue: number, sizePx: number): string {
   const opacity = 0.15 + (colorValue / 255) * 0.85;

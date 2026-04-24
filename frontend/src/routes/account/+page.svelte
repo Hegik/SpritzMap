@@ -5,7 +5,7 @@
   import { api } from '$lib/api/client';
   import { t } from '$lib/i18n';
   import AppHeader from '$lib/components/AppHeader.svelte';
-  import { buildIconHtml } from '$lib/utils/markerIcon';
+  import { buildIconHtml, buildUnavailableIconHtml } from '$lib/utils/markerIcon';
 
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -271,7 +271,11 @@
               >✕</button>
 
               <div class="entry-icon">
-                {@html buildIconHtml(entry.drink_color_hex, entry.color_value, 80)}
+                {#if entry.unavailable}
+                  {@html buildUnavailableIconHtml(80)}
+                {:else}
+                  {@html buildIconHtml(entry.drink_color_hex, entry.color_value, 80)}
+                {/if}
               </div>
 
               <div class="entry-info">
