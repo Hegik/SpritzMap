@@ -25,6 +25,7 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - media:/app/media
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
@@ -52,4 +53,5 @@ services:
 
 volumes:
   pgdata:
+  media:
   geoserver_data:

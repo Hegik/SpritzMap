@@ -5,5 +5,6 @@ from app.models.drink import Drink
 from app.models.price_entry import PriceEntry
 from app.models.moderation_log import ModerationLog
 from app.models.user_deletion_log import UserDeletionLog
+from app.models.photo import Photo
 
-__all__ = ["City", "User", "Location", "Drink", "PriceEntry", "ModerationLog", "UserDeletionLog"]
+__all__ = ["City", "User", "Location", "Drink", "PriceEntry", "ModerationLog", "UserDeletionLog", "Photo"]

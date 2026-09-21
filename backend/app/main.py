@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
+import mimetypes
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -9,7 +12,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.database import Base
-from app.api.routes import auth, locations, prices, drinks, moderation, admin, cities
+from app.api.routes import auth, locations, prices, drinks, moderation, admin, cities, photos, config
 from app.services.osm_sync import sync_all_cities
 import logging
 
@@ -79,6 +82,24 @@ app.include_router(drinks.router)
 app.include_router(moderation.router)
 app.include_router(admin.router)
 app.include_router(cities.router)
+app.include_router(photos.router)
+app.include_router(config.router)
+
+
+class ImmutableStaticFiles(StaticFiles):
+    """Fotos haben UUID-Dateinamen und ändern sich nie → langes Browser-Caching."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
+# python:slim kennt .webp nicht → sonst text/plain
+mimetypes.add_type("image/webp", ".webp")
+Path(settings.MEDIA_ROOT).mkdir(parents=True, exist_ok=True)
+app.mount("/media", ImmutableStaticFiles(directory=settings.MEDIA_ROOT), name="media")
 
 
 @app.get("/health")

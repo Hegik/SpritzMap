@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
+from app.models.price_entry import GlassType
 
 
 class PriceEntryCreate(BaseModel):
@@ -8,6 +9,9 @@ class PriceEntryCreate(BaseModel):
     price: float = Field(gt=0, le=50)
     color_value: int = Field(ge=0, le=255, default=128)
     note: str | None = Field(None, max_length=500)
+    glass_type: GlassType | None = None
+    ai_color_value: int | None = Field(None, ge=0, le=255)
+    ai_glass_type: GlassType | None = None
 
 
 class PriceEntryUnavailable(BaseModel):
@@ -19,13 +23,18 @@ class PriceEntryUpdate(BaseModel):
     price: float = Field(gt=0, le=50)
     color_value: int = Field(ge=0, le=255)
     note: str | None = Field(None, max_length=500)
+    glass_type: GlassType | None = None
+
+
+class GlassTypeUpdate(BaseModel):
+    glass_type: GlassType | None
 
 
 class PriceEntryOut(BaseModel):
     id: int
     location_id: int
     drink_id: int
-    user_id: int
+    user_id: int | None
     price: float
     price_tier: str  # €, €€, €€€
     color_value: int
@@ -33,6 +42,9 @@ class PriceEntryOut(BaseModel):
     last_confirmed_at: datetime
     is_current: bool
     note: str | None
+    glass_type: GlassType | None = None
+    ai_color_value: int | None = None
+    ai_glass_type: GlassType | None = None
 
     model_config = {"from_attributes": True}
 

@@ -11,6 +11,8 @@ from app.models.location import Location
 from app.models.drink import Drink
 from app.models.user_deletion_log import UserDeletionLog
 from app.models.user import User
+from app.models.photo import Photo
+from app.api.routes.photos import photo_to_dict
 from app.api.deps import get_moderator
 
 router = APIRouter(prefix="/moderation", tags=["moderation"])
@@ -167,6 +169,14 @@ async def list_entries(
         base_query.order_by(PriceEntry.reported_at.desc()).offset(offset).limit(limit)
     )
 
+    rows = rows.all()
+    entry_ids = [row[0].id for row in rows]
+    photos_by_entry: dict[int, list[dict]] = {}
+    if entry_ids:
+        photo_rows = await db.execute(select(Photo).where(Photo.price_entry_id.in_(entry_ids)))
+        for p in photo_rows.scalars().all():
+            photos_by_entry.setdefault(p.price_entry_id, []).append(photo_to_dict(p))
+
     items = []
     for row in rows:
         entry, location_name_val, drink_name_val, color_hex_val, username_val = row
@@ -180,6 +190,9 @@ async def list_entries(
             "reported_at": entry.reported_at,
             "is_current": entry.is_current,
             "note": entry.note,
+            "glass_type": entry.glass_type.value if entry.glass_type else None,
+            "ai_glass_type": entry.ai_glass_type.value if entry.ai_glass_type else None,
+            "photos": photos_by_entry.get(entry.id, []),
         })
 
     return {"total": total, "items": items}

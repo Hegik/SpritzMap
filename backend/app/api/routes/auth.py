@@ -14,6 +14,8 @@ from app.models.price_entry import PriceEntry
 from app.models.location import Location
 from app.models.drink import Drink
 from app.models.user_deletion_log import UserDeletionLog
+from app.models.photo import Photo
+from app.api.routes.photos import photo_to_dict, delete_photo_files
 from app.core.config import settings
 from app.schemas.user import UserRegister, UserOut, Token, ForgotPassword, ResetPassword, UpdateProfile, UpdatePassword
 from fastapi.responses import JSONResponse
@@ -202,8 +204,15 @@ async def export_my_data(
                 "color_value": e.color_value,
                 "reported_at": e.reported_at.isoformat(),
                 "note": e.note,
+                "glass_type": e.glass_type.value if e.glass_type else None,
+                "ai_color_value": e.ai_color_value,
+                "ai_glass_type": e.ai_glass_type.value if e.ai_glass_type else None,
             }
             for e in user_with_entries.price_entries
+        ],
+        "photos": [
+            photo_to_dict(p)
+            for p in (await db.execute(select(Photo).where(Photo.user_id == current_user.id))).scalars().all()
         ],
     }
     return JSONResponse(
@@ -237,6 +246,15 @@ async def my_entries(
     )
     rows = rows_result.all()
 
+    entry_ids = [entry.id for entry, _, _ in rows]
+    photos_by_entry: dict[int, list[dict]] = {}
+    if entry_ids:
+        photo_rows = await db.execute(
+            select(Photo).where(Photo.price_entry_id.in_(entry_ids)).order_by(Photo.created_at)
+        )
+        for p in photo_rows.scalars().all():
+            photos_by_entry.setdefault(p.price_entry_id, []).append(photo_to_dict(p))
+
     items = [
         {
             "id": entry.id,
@@ -252,6 +270,9 @@ async def my_entries(
             "note": entry.note,
             "unavailable": entry.unavailable,
             "is_current": entry.is_current,
+            "glass_type": entry.glass_type.value if entry.glass_type else None,
+            "ai_glass_type": entry.ai_glass_type.value if entry.ai_glass_type else None,
+            "photos": photos_by_entry.get(entry.id, []),
         }
         for entry, location, drink in rows
     ]
@@ -264,6 +285,11 @@ async def delete_me(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Fotos können Personen zeigen → beim Löschen des Kontos vollständig entfernen
+    user_photos = (await db.execute(select(Photo).where(Photo.user_id == current_user.id))).scalars().all()
+    for photo in user_photos:
+        await db.delete(photo)
+
     # Anonymize all price entries by this user
     await db.execute(
         sa_update(PriceEntry)
@@ -273,3 +299,5 @@ async def delete_me(
     db.add(UserDeletionLog())
     await db.delete(current_user)
     await db.commit()
+    for photo in user_photos:
+        delete_photo_files(photo)

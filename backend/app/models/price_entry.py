@@ -1,7 +1,14 @@
-from sqlalchemy import Float, Integer, ForeignKey, DateTime, Boolean, String
+from sqlalchemy import Float, Integer, ForeignKey, DateTime, Boolean, String, Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, timezone
+import enum
 from app.core.database import Base
+
+
+class GlassType(str, enum.Enum):
+    wine = "wine"
+    tumbler = "tumbler"
+    other = "other"
 
 
 class PriceEntry(Base):
@@ -25,6 +32,12 @@ class PriceEntry(Base):
     is_current: Mapped[bool] = mapped_column(Boolean, default=True)
     unavailable: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     note: Mapped[str | None] = mapped_column(String(500))
+
+    # Glasform: vom Nutzer bestätigt/korrigiert (maßgeblich)
+    glass_type: Mapped[GlassType | None] = mapped_column(SAEnum(GlassType, name="glasstype"), nullable=True)
+    # Unveränderte KI-Vorschläge aus der Bildanalyse im Client (Referenz/Genauigkeitsmessung)
+    ai_color_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ai_glass_type: Mapped[GlassType | None] = mapped_column(SAEnum(GlassType, name="glasstype"), nullable=True)
 
     location: Mapped["Location"] = relationship(back_populates="price_entries")
     drink: Mapped["Drink"] = relationship(back_populates="price_entries")

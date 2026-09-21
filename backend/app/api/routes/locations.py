@@ -57,6 +57,10 @@ async def get_locations_geojson(
             PriceEntry.price,
             PriceEntry.drink_id,
             PriceEntry.reported_at,
+            PriceEntry.id.label("entry_id"),
+            PriceEntry.user_id.label("entry_user_id"),
+            PriceEntry.last_confirmed_at,
+            PriceEntry.glass_type,
             Drink.name.label("drink_name"),
             Drink.color_hex,
             color_sq.c.avg_color,
@@ -91,7 +95,8 @@ async def get_locations_geojson(
 
     features = []
     for row in rows:
-        location, price, drink_id_val, reported_at, drink_name, color_hex, avg_color, username, lng, lat = row
+        (location, price, drink_id_val, reported_at, entry_id, entry_user_id, last_confirmed_at,
+         glass_type, drink_name, color_hex, avg_color, username, lng, lat) = row
         tier = settings.get_price_tier(price)
 
         if price_tier and tier != price_tier:
@@ -113,6 +118,10 @@ async def get_locations_geojson(
                 "avg_color_value": round(avg_color or 128),
                 "reported_by": username or "Gelöschter Nutzer",
                 "reported_at": reported_at.strftime("%d.%m.%Y"),
+                "entry_id": entry_id,
+                "entry_user_id": entry_user_id,
+                "last_confirmed_at": last_confirmed_at.strftime("%d.%m.%Y") if last_confirmed_at else None,
+                "glass_type": glass_type.value if glass_type else None,
             },
         })
 

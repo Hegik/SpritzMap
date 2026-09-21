@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # Color averaging
     COLOR_AVERAGE_SAMPLE_SIZE: int = 50
 
+    # Foto-Uploads (persistentes Volume, in Coolify unter /app/media gemountet)
+    MEDIA_ROOT: str = "/app/media"
+    MAX_UPLOAD_BYTES: int = 3_000_000
+    MAX_IMAGE_DIMENSION: int = 2000
+
     # SMTP
     SMTP_HOST: str = "smtp.protonmail.ch"
     SMTP_PORT: int = 587
