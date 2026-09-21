@@ -19,7 +19,7 @@ geoserver/  — kartoza/geoserver Docker image, reads from the same DB
 - Admins add cities by name search (Nominatim); boundary, districts (`areas`) and the first OSM import run automatically (`backend/app/services/geo_import.py`)
 - OSM sync (`backend/app/services/osm_sync.py`) is a staggered queue: every 10 min at most ONE due city (`cities.next_sync_at`), guarded by a Postgres advisory lock, bulk upsert, query by city boundary, backoff on failure, deactivation only after 7 days unseen. Each run is logged in `osm_sync_runs`
 - `GET /locations/geojson` returns filtered GeoJSON for MapLibre GL markers
-- GeoServer publishes ONE WMS layer `spritzmap:area_summary` for all cities (`viewparams=city_id:X;drink_id:Y`) — shown at zoom < 15, hidden at zoom ≥ 15 (`WMS_MAX_ZOOM` in `SpritzMap.svelte`). Setup: `geoserver/setup_area_layer.py`
+- GeoServer publishes ONE WMS layer `spritzmap:area_summary` for all cities (`viewparams=city_id:X;drink_id:Y`) — shown at zoom < 15, hidden at zoom ≥ 15 (`WMS_MAX_ZOOM` in `SpritzMap.svelte`). Setup: `backend/geoserver/setup_area_layer.py`
 - Moderators edit only in assigned cities (`moderator_cities`, checks in `app/api/deps.py`: `assert_can_moderate`), but can read everything; admins edit everywhere
 
 ## Development Commands
@@ -68,7 +68,7 @@ Services: frontend `:3000`, backend `:8000`, geoserver `:8080`, postgres `:5432`
 | `backend/app/services/osm_sync.py` | OSM Overpass sync: queue, lock, bulk upsert, mirrors |
 | `backend/app/services/geo_import.py` | City creation (Nominatim), district import from OSM, GeoJSON upload |
 | `backend/app/services/spatial.py` | `assign_areas` – precomputed point-in-polygon `locations.area_id` |
-| `geoserver/area_summary.sql` | SQL view behind the shared area layer |
+| `backend/geoserver/area_summary.sql` | SQL view behind the shared area layer |
 | `backend/app/api/routes/locations.py` | GeoJSON endpoint with drink/price filter |
 | `frontend/src/lib/utils/markerIcon.ts` | SVG wine glass icon generator (color + intensity) |
 | `frontend/src/lib/components/SpritzMap.svelte` | Main MapLibre GL map, marker loading, WMS layer |

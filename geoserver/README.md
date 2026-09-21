@@ -9,11 +9,16 @@ Ein **einziger** WMS-Layer liefert die Gebietszusammenfassung für **alle** Stä
 
 ## Einrichtung (einmalig, idempotent)
 
+Die Dateien liegen unter `backend/geoserver/` und sind damit im Backend-Image enthalten. In Produktion ist die
+GeoServer-REST-API nur intern erreichbar – das Skript daher als Coolify-Einmal-Task im Backend-Container ausführen
+(`python geoserver/setup_area_layer.py`, `GEOSERVER_URL` auf den internen GeoServer-Container zeigen lassen).
+
+
 ```bash
 GEOSERVER_URL=https://geoserver.example.de/geoserver \
 GEOSERVER_USER=admin GEOSERVER_PASSWORD=... \
 DB_HOST=... DB_PORT=5432 DB_NAME=spritzmap DB_USER=... DB_PASSWORD=... \
-python3 geoserver/setup_area_layer.py
+python3 backend/geoserver/setup_area_layer.py
 ```
 
 Das Skript (nur Python-Standardbibliothek) legt per REST-API an bzw. aktualisiert:
@@ -22,8 +27,8 @@ Das Skript (nur Python-Standardbibliothek) legt per REST-API an bzw. aktualisier
 |---|---|
 | Workspace | `spritzmap` |
 | PostGIS-Store | `spritzmap_db` (bestehender Store wird wiederverwendet, `STORE_NAME` überschreibt den Namen) |
-| SQL-View-Layer | `area_summary` aus [`area_summary.sql`](area_summary.sql), Viewparams `city_id`, `drink_id` (nur Ziffern erlaubt) |
-| Stil | `spritz_index_style` aus [`lor_spritz_index.sld`](lor_spritz_index.sld) |
+| SQL-View-Layer | `area_summary` aus [`area_summary.sql`](../backend/geoserver/area_summary.sql), Viewparams `city_id`, `drink_id` (nur Ziffern erlaubt) |
+| Stil | `spritz_index_style` aus [`lor_spritz_index.sld`](../backend/geoserver/lor_spritz_index.sld) |
 
 Nach Änderungen an `area_summary.sql` oder am SLD das Skript einfach erneut ausführen.
 
