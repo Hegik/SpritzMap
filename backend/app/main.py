@@ -13,7 +13,8 @@ from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.database import Base
 from app.api.routes import auth, locations, prices, drinks, moderation, admin, cities, photos, config
-from app.services.osm_sync import sync_all_cities
+from app.services.osm_sync import run_sync
+from datetime import datetime, timedelta, timezone
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -21,13 +22,15 @@ logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
+# Gestaffelter OSM-Sync: pro Tick höchstens eine fällige Stadt (siehe services/osm_sync.py)
+OSM_SYNC_TICK_MINUTES = 10
+
 
 async def scheduled_osm_sync():
-    async with AsyncSessionLocal() as db:
-        try:
-            await sync_all_cities(db)
-        except Exception as e:
-            logger.warning("OSM sync failed: %s", e)
+    try:
+        await run_sync()
+    except Exception as e:
+        logger.warning("OSM sync tick failed: %s", e)
 
 
 @asynccontextmanager
@@ -36,19 +39,15 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Initial OSM sync — non-blocking, server starts even if Overpass is unavailable
-    async with AsyncSessionLocal() as db:
-        try:
-            await sync_all_cities(db)
-        except Exception as e:
-            logger.warning("Initial OSM sync failed (will retry on schedule): %s", e)
-
-    # Schedule recurring sync
+    # Kein blockierender Sync beim Start mehr: der erste Tick läuft kurz nach dem Hochfahren
     scheduler.add_job(
         scheduled_osm_sync,
         "interval",
-        hours=settings.OSM_SYNC_INTERVAL_HOURS,
+        minutes=OSM_SYNC_TICK_MINUTES,
         id="osm_sync",
+        max_instances=1,
+        coalesce=True,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30),
     )
     scheduler.start()
 

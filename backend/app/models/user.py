@@ -29,4 +29,6 @@ class User(Base):
     )
 
     price_entries: Mapped[list["PriceEntry"]] = relationship(back_populates="user")
+    # Städte, in denen ein Moderator bearbeiten darf (Admins: alle)
+    moderated_cities: Mapped[list["City"]] = relationship(secondary="moderator_cities")
     moderation_logs: Mapped[list["ModerationLog"]] = relationship(back_populates="moderator")
