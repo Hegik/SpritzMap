@@ -34,16 +34,17 @@
 
   async function logout() {
     closeDropdown();
-    authStore.logout();
+    let authentikLogout: string | null = null;
     if ($authConfig.mode !== 'legacy') {
-      // Auch die Sitzung beim SpritzMap-Login beenden, sonst meldet der nächste Klick sofort wieder an
+      // Auch die Sitzung beim SpritzMap-Login beenden, sonst meldet der nächste Klick sofort wieder an.
+      // Die Adresse braucht das noch gültige Token (Backend hängt den id_token_hint an) – also vor logout().
       try {
-        const { url } = await api.get<{ url: string }>('/auth/oidc/logout-url');
-        window.location.href = url;
-        return;
+        authentikLogout = (await api.get<{ url: string }>('/auth/oidc/logout-url')).url;
       } catch { /* dann eben nur lokal abmelden */ }
     }
-    goto('/');
+    authStore.logout();
+    if (authentikLogout) window.location.href = authentikLogout;
+    else goto('/');
   }
 </script>
 

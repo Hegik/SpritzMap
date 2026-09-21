@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import create_access_token
+from app.api.deps import get_current_user
 from app.models.oidc_login import OidcLogin
 from app.models.user import User
 from app.services import oidc
@@ -145,6 +146,7 @@ async def oidc_callback(
         await db.commit()
         return _frontend("/auth/callback", error="disabled")
 
+    user.oidc_id_token = tokens["id_token"]
     login.user_id = user.id
     login.login_code = secrets.token_urlsafe(32)
     login.login_code_expires = datetime.now(timezone.utc) + CODE_TTL
@@ -173,12 +175,17 @@ async def oidc_exchange(request: Request, body: ExchangeRequest, db: AsyncSessio
 
 
 @router.get("/oidc/logout-url")
-async def oidc_logout_url():
+async def oidc_logout_url(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Abmelde-Adresse bei Authentik. Muss vor dem Verwerfen des SpritzMap-Tokens abgefragt werden."""
     _oidc_enabled()
+    home = f"{settings.FRONTEND_URL.rstrip('/')}/"
+    hint = current_user.oidc_id_token
+    current_user.oidc_id_token = None  # Sitzung endet, der Hint wird nicht mehr gebraucht
+    await db.commit()
     try:
-        return {"url": await oidc.logout_url(f"{settings.FRONTEND_URL.rstrip('/')}/")}
+        return {"url": await oidc.logout_url(home, hint)}
     except Exception:
-        return {"url": f"{settings.FRONTEND_URL.rstrip('/')}/"}
+        return {"url": home}
 
 
 async def _free_username(db: AsyncSession, wanted: str) -> str:

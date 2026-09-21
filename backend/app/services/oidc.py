@@ -104,11 +104,15 @@ def unenrollment_url() -> str:
     return f"{settings.AUTHENTIK_URL.rstrip('/')}/if/flow/{settings.OIDC_UNENROLLMENT_FLOW}/"
 
 
-async def logout_url(post_logout_redirect: str) -> str:
+async def logout_url(post_logout_redirect: str, id_token_hint: str | None) -> str:
     endpoint = (await discovery()).get("end_session_endpoint")
     if not endpoint:
         return post_logout_redirect
-    return f"{endpoint}?{urlencode({'post_logout_redirect_uri': post_logout_redirect, 'client_id': settings.OIDC_CLIENT_ID})}"
+    # Authentik leitet nur mit id_token_hint zurück; ohne endet der Flow auf der Abmeldeseite von Authentik
+    params = {"client_id": settings.OIDC_CLIENT_ID}
+    if id_token_hint:
+        params |= {"id_token_hint": id_token_hint, "post_logout_redirect_uri": post_logout_redirect}
+    return f"{endpoint}?{urlencode(params)}"
 
 
 async def exchange_code(code: str, code_verifier: str) -> dict:
