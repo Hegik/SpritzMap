@@ -123,10 +123,17 @@ async def exchange_code(code: str, code_verifier: str) -> dict:
                 "redirect_uri": settings.OIDC_REDIRECT_URI,
                 "code_verifier": code_verifier,
             },
-            auth=(settings.OIDC_CLIENT_ID, settings.OIDC_CLIENT_SECRET),
+            # strip(): beim Einfügen in Coolify rutscht leicht ein Leerzeichen oder Zeilenumbruch mit
+            auth=(settings.OIDC_CLIENT_ID, settings.OIDC_CLIENT_SECRET.strip()),
         )
     if r.status_code != 200:
-        raise OidcError(f"Token-Austausch fehlgeschlagen ({r.status_code})")
+        # error/error_description aus der OAuth-Antwort enthalten keine Geheimnisse, helfen aber bei der Fehlersuche
+        try:
+            body = r.json()
+            detail = f"{body.get('error')}: {body.get('error_description', '')}"[:300]
+        except ValueError:
+            detail = "keine JSON-Antwort"
+        raise OidcError(f"Token-Austausch fehlgeschlagen ({r.status_code}, {detail})")
     return r.json()
 
 
