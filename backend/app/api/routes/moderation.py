@@ -13,7 +13,7 @@ from app.models.user_deletion_log import UserDeletionLog
 from app.models.user import User
 from app.models.photo import Photo
 from app.api.routes.photos import photo_to_dict
-from app.api.deps import get_moderator
+from app.api.deps import get_moderator, assert_can_moderate, moderated_city_ids
 
 router = APIRouter(prefix="/moderation", tags=["moderation"])
 
@@ -31,6 +31,14 @@ LOCATION_TYPE_COLORS = {
     "cafe": "#AB47BC",
     "other": "#78909C",
 }
+
+
+async def _entry_cities(db: AsyncSession, entry_ids: list[int]) -> set[int]:
+    rows = await db.execute(
+        select(Location.city_id).join(PriceEntry, PriceEntry.location_id == Location.id)
+        .where(PriceEntry.id.in_(entry_ids)).distinct()
+    )
+    return {r.city_id for r in rows}
 
 
 # ── existing endpoints ────────────────────────────────────────────────────────
@@ -62,6 +70,7 @@ async def flag_entry(
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
+    await assert_can_moderate(current_user, await _entry_cities(db, [entry_id]), db)
 
     log = ModerationLog(
         price_entry_id=entry_id,
@@ -85,6 +94,7 @@ async def delete_entry(
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
+    await assert_can_moderate(current_user, await _entry_cities(db, [entry_id]), db)
 
     entry.is_current = False
     log = ModerationLog(
@@ -129,8 +139,9 @@ async def list_entries(
     page: int = 1,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_moderator),
+    current_user: User = Depends(get_moderator),
 ):
+    editable_cities = await moderated_city_ids(current_user, db)
     conditions = []
     if drink_id is not None:
         conditions.append(PriceEntry.drink_id == drink_id)
@@ -159,7 +170,7 @@ async def list_entries(
     total = total_result.scalar_one()
 
     base_query = joins(
-        select(PriceEntry, Location.name.label("location_name"), Drink.name.label("drink_name"), Drink.color_hex.label("color_hex"), User.username.label("username"))
+        select(PriceEntry, Location.name.label("location_name"), Drink.name.label("drink_name"), Drink.color_hex.label("color_hex"), User.username.label("username"), Location.city_id.label("city_id"))
     )
     if conditions:
         base_query = base_query.where(and_(*conditions))
@@ -179,7 +190,7 @@ async def list_entries(
 
     items = []
     for row in rows:
-        entry, location_name_val, drink_name_val, color_hex_val, username_val = row
+        entry, location_name_val, drink_name_val, color_hex_val, username_val, city_id_val = row
         items.append({
             "id": entry.id,
             "location_name": location_name_val,
@@ -193,6 +204,8 @@ async def list_entries(
             "glass_type": entry.glass_type.value if entry.glass_type else None,
             "ai_glass_type": entry.ai_glass_type.value if entry.ai_glass_type else None,
             "photos": photos_by_entry.get(entry.id, []),
+            "city_id": city_id_val,
+            "can_moderate": editable_cities is None or city_id_val in editable_cities,
         })
 
     return {"total": total, "items": items}
@@ -210,6 +223,8 @@ async def bulk_delete_entries(
 ):
     if not body.entry_ids:
         return {"deleted": 0}
+    # Alle Einträge müssen in Städten liegen, die der Moderator bearbeiten darf – sonst nichts löschen
+    await assert_can_moderate(current_user, await _entry_cities(db, body.entry_ids), db)
 
     result = await db.execute(
         select(PriceEntry).where(PriceEntry.id.in_(body.entry_ids))
@@ -426,22 +441,20 @@ async def stats_entries(
     return {"groups": groups, "days": days}
 
 
-@router.get("/lors")
-async def stats_lors(
+@router.get("/areas")
+async def stats_areas(
     city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
-    if city_id is not None:
-        result = await db.execute(
-            text("SELECT DISTINCT lor_schluessel, pr_name FROM public.lor WHERE city_id = :city_id ORDER BY pr_name"),
-            {"city_id": city_id},
-        )
-    else:
-        result = await db.execute(
-            text("SELECT DISTINCT lor_schluessel, pr_name FROM public.lor ORDER BY pr_name")
-        )
-    return [{"lor_schluessel": row[0], "pr_name": row[1]} for row in result]
+    """Gebiete einer Stadt für den Gebietsfilter; ohne Stadt keine Auswahl (Gebiete sind stadtspezifisch)."""
+    if city_id is None:
+        return []
+    result = await db.execute(
+        text("SELECT id, key, name FROM areas WHERE city_id = :city_id ORDER BY name"),
+        {"city_id": city_id},
+    )
+    return [{"id": row.id, "key": row.key, "name": row.name} for row in result]
 
 
 @router.get("/graph-prices")
@@ -449,7 +462,7 @@ async def stats_prices(
     granularity: str = "month",
     year: int | None = None,
     month: int | None = None,
-    lor_schluessel: str | None = None,
+    area_id: int | None = None,
     drink_id: int | None = None,
     city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
@@ -468,7 +481,7 @@ async def stats_prices(
     if city_id is not None:
         params["city_id"] = city_id
 
-    berlin_result = await db.execute(
+    total_result = await db.execute(
         text(f"""
             SELECT date_trunc('day', reported_at) AS day,
                    AVG(price) AS avg_price,
@@ -484,20 +497,20 @@ async def stats_prices(
         """),
         params,
     )
-    berlin = [
+    total = [
         {
             "date": row[0].strftime("%Y-%m-%d"),
             "avg_price": float(row[1]),
             "min_price": float(row[2]),
             "max_price": float(row[3]),
         }
-        for row in berlin_result
+        for row in total_result
     ]
 
-    lor_data = []
-    if lor_schluessel:
-        lor_params = {**params, "lor_schluessel": lor_schluessel}
-        lor_result = await db.execute(
+    area_data = []
+    if area_id:
+        area_params = {**params, "area_id": area_id}
+        area_result = await db.execute(
             text(f"""
                 SELECT date_trunc('day', pe.reported_at) AS day,
                        AVG(pe.price) AS avg_price,
@@ -505,8 +518,7 @@ async def stats_prices(
                        MAX(pe.price) AS max_price
                 FROM price_entries pe
                 JOIN locations loc ON pe.location_id = loc.id
-                JOIN public.lor l ON ST_Within(ST_Transform(loc.geom, ST_SRID(l.geom)), l.geom)
-                WHERE l.lor_schluessel = :lor_schluessel
+                WHERE loc.area_id = :area_id
                   AND pe.reported_at BETWEEN :start AND :end
                   AND pe.price > 0
                   {drink_filter}
@@ -514,31 +526,36 @@ async def stats_prices(
                 GROUP BY 1
                 ORDER BY 1
             """),
-            lor_params,
+            area_params,
         )
-        lor_data = [
+        area_data = [
             {
                 "date": row[0].strftime("%Y-%m-%d"),
                 "avg_price": float(row[1]),
                 "min_price": float(row[2]),
                 "max_price": float(row[3]),
             }
-            for row in lor_result
+            for row in area_result
         ]
 
-    return {"berlin": berlin, "lor": lor_data}
+    return {"total": total, "area": area_data}
 
 
 @router.get("/price-feed")
 async def stats_price_changes(
     limit: int = 20,
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
+    city_filter = "WHERE loc.city_id = :city_id" if city_id else ""
+    params: dict = {"limit": limit}
+    if city_id:
+        params["city_id"] = city_id
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT sub.id, sub.price, sub.prev_price, sub.reported_at, sub.user_id,
-                   sub.location_name, sub.drink_name, sub.username
+                   sub.location_name, sub.drink_name, sub.username, sub.city_id
             FROM (
                 SELECT pe.id,
                        pe.price,
@@ -550,17 +567,19 @@ async def stats_price_changes(
                        ) AS prev_price,
                        loc.name AS location_name,
                        d.name AS drink_name,
-                       u.username
+                       u.username,
+                       loc.city_id
                 FROM price_entries pe
                 JOIN locations loc ON pe.location_id = loc.id
                 JOIN drinks d ON pe.drink_id = d.id
                 LEFT JOIN users u ON pe.user_id = u.id
+                {city_filter}
             ) sub
             WHERE sub.prev_price IS NOT NULL AND sub.price != sub.prev_price
             ORDER BY sub.reported_at DESC
             LIMIT :limit
         """),
-        {"limit": limit},
+        params,
     )
     rows = result.fetchall()
     return [
@@ -574,6 +593,7 @@ async def stats_price_changes(
             "location_name": row[5],
             "drink_name": row[6],
             "username": row[7],
+            "city_id": row[8],
         }
         for row in rows
     ]

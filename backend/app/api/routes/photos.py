@@ -8,7 +8,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, can_moderate
 from app.core.config import settings
 from app.core.database import get_db
 from app.models.location import Location
@@ -148,8 +148,10 @@ async def delete_photo(
     photo = await db.get(Photo, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
-    if photo.user_id != current_user.id and current_user.role not in (UserRole.moderator, UserRole.admin):
-        raise HTTPException(status_code=403, detail="Not allowed")
+    if photo.user_id != current_user.id:
+        city_id = (await db.execute(select(Location.city_id).where(Location.id == photo.location_id))).scalar_one()
+        if not await can_moderate(current_user, city_id, db):
+            raise HTTPException(status_code=403, detail="Not allowed")
     await db.delete(photo)
     await db.commit()
     delete_photo_files(photo)

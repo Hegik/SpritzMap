@@ -19,6 +19,8 @@ class UserOut(BaseModel):
     username: str
     role: UserRole
     is_active: bool
+    # Städte mit Bearbeitungsrechten; None = alle (Admin)
+    moderated_city_ids: list[int] | None = []
 
     model_config = {"from_attributes": True}
 

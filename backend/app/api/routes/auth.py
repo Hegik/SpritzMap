@@ -19,7 +19,7 @@ from app.api.routes.photos import photo_to_dict, delete_photo_files
 from app.core.config import settings
 from app.schemas.user import UserRegister, UserOut, Token, ForgotPassword, ResetPassword, UpdateProfile, UpdatePassword
 from fastapi.responses import JSONResponse
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, moderated_city_ids
 from app.services.email import send_verification_email, send_reset_email
 import logging
 
@@ -130,8 +130,11 @@ async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/me", response_model=UserOut)
-async def me(current_user: User = Depends(get_current_user)):
-    return current_user
+async def me(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    out = UserOut.model_validate(current_user)
+    allowed = await moderated_city_ids(current_user, db)
+    out.moderated_city_ids = None if allowed is None else sorted(allowed)
+    return out
 
 
 @router.put("/me", response_model=UserOut)

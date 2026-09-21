@@ -8,7 +8,8 @@ from app.models.price_entry import PriceEntry
 from app.models.moderation_log import ModerationLog
 from app.models.user import User, UserRole
 from app.schemas.price_entry import PriceEntryCreate, PriceEntryUpdate, PriceEntryOut, PriceEntryUnavailable, GlassTypeUpdate
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, can_moderate
+from app.models.location import Location
 
 router = APIRouter(prefix="/prices", tags=["prices"])
 
@@ -34,16 +35,17 @@ def _to_out(entry: PriceEntry) -> PriceEntryOut:
     )
 
 
-def _is_moderator(user: User) -> bool:
-    return user.role in (UserRole.moderator, UserRole.admin)
+async def _entry_city_id(db: AsyncSession, entry: PriceEntry) -> int:
+    return (await db.execute(select(Location.city_id).where(Location.id == entry.location_id))).scalar_one()
 
 
 async def _get_own_entry(db: AsyncSession, entry_id: int, user: User) -> PriceEntry:
+    """Eintrag, den der Nutzer ändern darf: eigener Eintrag oder Moderator dieser Stadt."""
     result = await db.execute(select(PriceEntry).where(PriceEntry.id == entry_id))
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Price entry not found")
-    if entry.user_id != user.id and not _is_moderator(user):
+    if entry.user_id != user.id and not await can_moderate(user, await _entry_city_id(db, entry), db):
         raise HTTPException(status_code=403, detail="Not allowed")
     return entry
 
@@ -156,12 +158,7 @@ async def delete_price_entry(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(PriceEntry).where(PriceEntry.id == entry_id))
-    entry = result.scalar_one_or_none()
-    if not entry:
-        raise HTTPException(status_code=404, detail="Price entry not found")
-    if entry.user_id != current_user.id and current_user.role not in ("moderator", "admin"):
-        raise HTTPException(status_code=403, detail="Not allowed")
+    entry = await _get_own_entry(db, entry_id, current_user)
     await db.delete(entry)
     await db.commit()
 
