@@ -3,12 +3,12 @@ Syncs bar/restaurant/beer garden locations from OpenStreetMap via Overpass API.
 
 Für viele Städte ausgelegt:
 - Abfrage über die Stadtfläche (OSM-Grenzrelation) statt Bbox → keine Überlappung zwischen Nachbarstädten;
-  bei Timeout Fallback auf 2×2-Kacheln der Bbox, gefiltert nach der Stadtgrenze
+  bei Timeout Fallback auf Kacheln je Teilfläche der Grenze, gefiltert nach der Stadtgrenze
 - Bulk-Upsert statt einer Abfrage pro Element
-- gestaffelte Warteschlange: der Scheduler synchronisiert alle 10 Minuten höchstens EINE fällige Stadt
-- Postgres-Advisory-Lock → nie zwei Syncs gleichzeitig (mehrere Worker, manueller Start)
+- Warteschlange, Lock und Zeitbudget: siehe services/city_jobs.py
 - Lokale werden erst deaktiviert, wenn sie 7 Tage lang in erfolgreichen Läufen fehlen
 """
+import asyncio
 import logging
 import random
 from datetime import datetime, timedelta, timezone
@@ -17,12 +17,11 @@ import httpx
 from geoalchemy2.shape import to_shape
 from shapely.geometry import Point
 from shapely.prepared import prep
-from sqlalchemy import select, text, literal_column
+from sqlalchemy import text, literal_column
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.database import AsyncSessionLocal, engine
 from app.models.city import City
 from app.models.location import Location, LocationType
 from app.models.osm_sync_run import OsmSyncRun
@@ -53,7 +52,8 @@ UPSERT_CHUNK = 1000
 DEACTIVATE_AFTER = timedelta(days=7)
 RETRY_BASE = timedelta(minutes=30)
 RETRY_MAX = timedelta(hours=12)
-SYNC_LOCK_KEY = 815_001  # beliebige, projektweit feste Advisory-Lock-ID
+TILE_MAX_DEGREES = 0.2  # größere Teilflächen werden für den Fallback in 2×2 Kacheln geteilt
+TILE_PAUSE = 3  # Sekunden zwischen Kachel-Abfragen
 
 
 class OverpassUnavailable(Exception):
@@ -83,8 +83,12 @@ out center;
 """
 
 
-async def overpass(query: str, timeout: float = 200) -> tuple[dict, str]:
-    """Führt eine Overpass-Abfrage aus, mit Mirror-Fallback. Gibt (JSON, Server-URL) zurück."""
+async def overpass(query: str, timeout: float = 200, expect_results: bool = False) -> tuple[dict, str]:
+    """Führt eine Overpass-Abfrage aus, mit Mirror-Fallback. Gibt (JSON, Server-URL) zurück.
+
+    expect_results=True: eine leere Antwort gilt als Fehlschlag (überlastete Server liefern teils still
+    ein leeres Ergebnis) – sonst würde ein Sync "erfolgreich" 0 Lokale melden.
+    """
     last_error: Exception | None = None
     async with httpx.AsyncClient(timeout=timeout, headers=OVERPASS_HEADERS) as client:
         for url in OVERPASS_URLS:
@@ -92,10 +96,12 @@ async def overpass(query: str, timeout: float = 200) -> tuple[dict, str]:
                 response = await client.post(url, data={"data": query})
                 response.raise_for_status()
                 data = response.json()
-                # Overpass meldet serverseitige Timeouts teils mit 200 + "remark"
+                # Overpass meldet serverseitige Fehler (Timeout, Speicher, Rate-Limit) teils mit 200 + "remark"
                 remark = data.get("remark") or ""
-                if "timed out" in remark or "out of memory" in remark:
+                if "error" in remark.lower() or "timed out" in remark or "out of memory" in remark:
                     raise OverpassUnavailable(remark)
+                if expect_results and not data.get("elements"):
+                    raise OverpassUnavailable("leere Antwort")
                 return data, url
             except httpx.HTTPStatusError as e:
                 # 4xx außer 429 = Fehler in unserer Anfrage → Mirror würde gleich antworten
@@ -104,12 +110,18 @@ async def overpass(query: str, timeout: float = 200) -> tuple[dict, str]:
                 last_error = e
             except (httpx.TransportError, OverpassUnavailable, ValueError) as e:
                 last_error = e
-            logger.warning("Overpass %s nicht verfügbar (%s), versuche nächsten Server", url, last_error)
-    raise OverpassUnavailable(str(last_error))
+            logger.warning("Overpass %s nicht verfügbar (%s), versuche nächsten Server", url, _describe(last_error))
+    raise OverpassUnavailable(_describe(last_error))
 
 
-def _split_bbox(bbox: str) -> list[str]:
-    min_lat, min_lon, max_lat, max_lon = (float(v) for v in bbox.split(","))
+def _describe(e: Exception | None) -> str:
+    # httpx-Timeouts haben keinen Text → Typ mit ausgeben
+    return f"{type(e).__name__}: {e}" if e and str(e) else type(e).__name__ if e else "unbekannt"
+
+
+def _split_bbox(min_lat: float, min_lon: float, max_lat: float, max_lon: float) -> list[str]:
+    if max(max_lat - min_lat, max_lon - min_lon) <= TILE_MAX_DEGREES:
+        return [f"{min_lat},{min_lon},{max_lat},{max_lon}"]
     mid_lat, mid_lon = (min_lat + max_lat) / 2, (min_lon + max_lon) / 2
     return [
         f"{a},{b},{c},{d}"
@@ -118,22 +130,42 @@ def _split_bbox(bbox: str) -> list[str]:
     ]
 
 
+def _fallback_tiles(city: City) -> list[str]:
+    """Kacheln für den Fallback: je Teilfläche der Stadtgrenze statt der Gesamt-Bbox
+    (z. B. Hamburg mit der Insel Neuwerk – die Gesamt-Bbox reicht bis in die Nordsee)."""
+    if city.boundary is None:
+        return [city.bbox]
+    boundary = to_shape(city.boundary)
+    parts = sorted(getattr(boundary, "geoms", [boundary]), key=lambda g: g.area, reverse=True)
+    tiles: list[str] = []
+    for part in parts:
+        if part.area < boundary.area * 0.001:
+            continue  # winzige Splitterflächen
+        min_lon, min_lat, max_lon, max_lat = part.bounds
+        tiles.extend(_split_bbox(min_lat, min_lon, max_lat, max_lon))
+    return tiles
+
+
 async def fetch_city_elements(city: City) -> tuple[list[dict], str]:
     """Holt alle relevanten OSM-Elemente einer Stadt. Gibt (Elemente, Server) zurück."""
     if city.osm_relation_id:
         try:
-            data, server = await overpass(_area_query(city.osm_relation_id))
+            data, server = await overpass(_area_query(city.osm_relation_id), expect_results=True)
             return data.get("elements", []), server
         except OverpassUnavailable as e:
             logger.warning("Flächenabfrage für '%s' fehlgeschlagen (%s) → Kachel-Fallback", city.name, e)
 
-    tiles = _split_bbox(city.bbox) if city.osm_relation_id else [city.bbox]
+    tiles = _fallback_tiles(city)
     seen: dict[tuple[str, int], dict] = {}
     server = ""
-    for tile in tiles:
+    for i, tile in enumerate(tiles):
+        if i:
+            await asyncio.sleep(TILE_PAUSE)
         data, server = await overpass(_bbox_query(tile))
         for el in data.get("elements", []):
             seen[(el["type"], el["id"])] = el
+    if not seen:
+        raise OverpassUnavailable("keine Lokale gefunden (leere Antworten)")
     return list(seen.values()), server
 
 
@@ -266,37 +298,3 @@ async def sync_osm_locations(db: AsyncSession, city: City) -> OsmSyncRun:
         await db.commit()
         logger.warning("OSM sync failed for '%s' (%d. Fehlschlag): %s", city.name, failures, e)
         raise
-
-
-async def run_sync(city_id: int | None = None) -> bool:
-    """Synchronisiert die angegebene oder die am längsten fällige Stadt.
-
-    Hält währenddessen einen Postgres-Advisory-Lock; läuft bereits ein Sync, passiert nichts.
-    Gibt True zurück, wenn ein Sync gelaufen ist.
-    """
-    async with engine.connect() as lock_conn:
-        locked = (await lock_conn.execute(
-            text("SELECT pg_try_advisory_lock(:k)"), {"k": SYNC_LOCK_KEY}
-        )).scalar()
-        await lock_conn.commit()
-        if not locked:
-            logger.info("OSM sync übersprungen: anderer Sync läuft bereits")
-            return False
-        try:
-            async with AsyncSessionLocal() as db:
-                query = select(City).where(City.is_active == True, City.osm_sync_enabled == True)
-                if city_id is not None:
-                    query = query.where(City.id == city_id)
-                else:
-                    query = query.where(City.next_sync_at <= datetime.now(timezone.utc)).order_by(City.next_sync_at)
-                city = (await db.execute(query.limit(1))).scalar_one_or_none()
-                if city is None:
-                    return False
-                try:
-                    await sync_osm_locations(db, city)
-                except Exception:
-                    pass  # bereits protokolliert, Backoff gesetzt
-                return True
-        finally:
-            await lock_conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": SYNC_LOCK_KEY})
-            await lock_conn.commit()

@@ -13,10 +13,11 @@ from app.models.osm_sync_run import OsmSyncRun
 from app.models.moderator_city import moderator_cities
 from app.models.price_entry import PriceEntry
 from app.api.deps import get_admin
-from app.services.osm_sync import run_sync, OverpassUnavailable
+from app.services.osm_sync import OverpassUnavailable
+from app.services.city_jobs import run_city_jobs
 from app.services.geo_import import (
     GeoImportError, search_cities, create_city_from_osm, refresh_boundary,
-    fetch_area_candidates, level_stats, choose_level, import_osm_areas, import_uploaded_areas,
+    fetch_area_candidates, level_stats, choose_level, import_osm_areas, import_uploaded_areas, city_points,
 )
 
 logger = logging.getLogger(__name__)
@@ -233,17 +234,6 @@ async def _get_city(db: AsyncSession, city_id: int) -> City:
     return city
 
 
-async def _setup_city_background(city_id: int) -> None:
-    """Nach dem Anlegen: Gebiete aus OSM importieren, dann ersten OSM-Sync ausführen."""
-    async with AsyncSessionLocal() as db:
-        city = await _get_city(db, city_id)
-        try:
-            await import_osm_areas(db, city)
-        except Exception as e:
-            logger.warning("Area import for '%s' failed: %s", city.name, e)
-    await run_sync(city_id)
-
-
 @router.get("/cities")
 async def list_all_cities(
     db: AsyncSession = Depends(get_db),
@@ -287,7 +277,8 @@ async def create_city(
         raise HTTPException(status_code=400, detail=str(e))
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"Nominatim nicht erreichbar: {e}")
-    background_tasks.add_task(_setup_city_background, city.id)
+    # Gebietsimport und erster Sync laufen seriell in der Warteschlange (nie parallel zu anderen Städten)
+    background_tasks.add_task(run_city_jobs)
     return _city_to_dict(city)
 
 
@@ -316,7 +307,7 @@ async def trigger_city_sync(
     # Läuft bereits ein Sync, verhindert der Advisory-Lock einen Doppellauf; die Stadt bleibt dann fällig
     city.next_sync_at = datetime.now(timezone.utc)
     await db.commit()
-    background_tasks.add_task(run_sync, city_id)
+    background_tasks.add_task(run_city_jobs, city_id)
     return {"detail": f"OSM-Sync für '{city.name}' gestartet"}
 
 
@@ -371,7 +362,7 @@ async def preview_area_levels(
         raise HTTPException(status_code=400, detail=str(e))
     except OverpassUnavailable as e:
         raise HTTPException(status_code=503, detail=f"Overpass nicht verfügbar: {e}")
-    stats = level_stats(city, by_level)
+    stats = level_stats(city, by_level, await city_points(db, city))
     return {"levels": stats, "recommended": choose_level(stats)}
 
 

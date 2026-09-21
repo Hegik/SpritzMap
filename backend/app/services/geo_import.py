@@ -6,17 +6,18 @@ Stadt anlegen und Gebiete importieren – ersetzt den früheren manuellen Setup-
 - alternativ GeoJSON-Upload offizieller Gebiete (z. B. Berliner LOR); Upload hat Vorrang vor OSM
 """
 import logging
+import math
 import re
 import unicodedata
 from datetime import datetime, timezone
 
 import httpx
 from geoalchemy2.shape import from_shape, to_shape
-from shapely.geometry import LineString, MultiPolygon, Polygon, shape
+from shapely.geometry import LineString, MultiPolygon, Point, Polygon, shape
 from shapely.ops import polygonize, unary_union
 from shapely.prepared import prep
 from shapely.validation import make_valid
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.area import Area
@@ -60,12 +61,18 @@ def slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name).strip("-")[:50] or "stadt"
 
 
-def _zoom_for_bbox(min_lat: float, min_lon: float, max_lat: float, max_lon: float) -> int:
-    extent = max(max_lat - min_lat, (max_lon - min_lon) * 0.6)
-    for zoom, max_extent in ((13, 0.08), (12, 0.2), (11, 0.4), (10, 0.8)):
-        if extent <= max_extent:
-            return zoom
-    return 9
+def _default_zoom(boundary: MultiPolygon) -> int:
+    """Start-Zoom so, dass die Kernstadt auf einen Bildschirm passt.
+
+    Maßgeblich ist die größte Teilfläche: Exklaven wie Hamburgs Insel Neuwerk würden sonst weit herauszoomen.
+    """
+    main = max(boundary.geoms, key=lambda g: g.area)
+    min_lon, min_lat, max_lon, max_lat = main.bounds
+    # Breite in "Längengrad-Äquivalent" (Breitengrade sind in Mercator ~1/cos(lat) gestreckt)
+    extent = max(max_lon - min_lon, (max_lat - min_lat) / math.cos(math.radians((min_lat + max_lat) / 2)))
+    # 256-px-Kacheln, Ziel ca. 1200 px Breite: 360° / 2^z * (1200/256) >= extent
+    zoom = math.floor(math.log2(360 * (1200 / 256) / max(extent, 1e-6)))
+    return max(9, min(13, zoom))
 
 
 async def _nominatim(path: str, params: dict) -> list[dict]:
@@ -92,7 +99,7 @@ async def search_cities(query: str) -> list[dict]:
         out.append({
             "osm_relation_id": r["osm_id"],
             "name": r.get("name") or r.get("display_name", "").split(",")[0],
-            "state": address.get("state"),
+            "state": address.get("state") or r.get("name"),
             "type": r.get("addresstype") or r.get("type"),
             "display_name": r.get("display_name"),
         })
@@ -110,14 +117,16 @@ async def _lookup_boundary(relation_id: int) -> dict:
     if boundary is None:
         raise GeoImportError("Für diese Relation liefert OSM keine Fläche")
     min_lat, max_lat, min_lon, max_lon = (float(v) for v in r["boundingbox"])
+    name = r.get("name") or r.get("display_name", "").split(",")[0]
     return {
-        "name": r.get("name") or r.get("display_name", "").split(",")[0],
-        "state": r.get("address", {}).get("state"),
+        "name": name,
+        # Stadtstaaten (Berlin, Hamburg, Bremen) haben kein eigenes "state"-Feld
+        "state": r.get("address", {}).get("state") or name,
         "boundary": boundary,
         "bbox": f"{min_lat},{min_lon},{max_lat},{max_lon}",
         "center_lat": float(r["lat"]),
         "center_lon": float(r["lon"]),
-        "default_zoom": _zoom_for_bbox(min_lat, min_lon, max_lat, max_lon),
+        "default_zoom": _default_zoom(boundary),
     }
 
 
@@ -197,7 +206,7 @@ async def fetch_area_candidates(city: City) -> dict[int, list[dict]]:
 area(id:{OVERPASS_AREA_OFFSET + city.osm_relation_id})->.a;
 rel(area.a)["boundary"="administrative"]["admin_level"~"^({levels})$"];
 out geom;
-""")
+""", expect_results=True)
     boundary = to_shape(city.boundary)
     inside = prep(boundary.buffer(0.001))
     by_level: dict[int, list[dict]] = {}
@@ -219,27 +228,53 @@ out geom;
     return by_level
 
 
-def level_stats(city: City, by_level: dict[int, list[dict]]) -> list[dict]:
+async def city_points(db: AsyncSession, city: City) -> list[Point]:
+    """Aktive Lokale der Stadt als Punkte – Maßstab dafür, ob Gebiete die relevanten Teile abdecken."""
+    rows = await db.execute(
+        text("SELECT ST_X(geom) AS lon, ST_Y(geom) AS lat FROM locations WHERE city_id = :c AND is_active"),
+        {"c": city.id},
+    )
+    return [Point(r.lon, r.lat) for r in rows]
+
+
+def _share_covered(geoms: list, points: list[Point]) -> float:
+    covered = prep(unary_union(geoms))
+    return sum(1 for p in points if covered.covers(p)) / len(points)
+
+
+def level_stats(city: City, by_level: dict[int, list[dict]], points: list[Point] | None = None) -> list[dict]:
+    """Je Ebene: Anzahl, Flächenabdeckung und – falls Lokale bekannt – Anteil der Lokale in den Gebieten.
+
+    Die Fläche allein täuscht: Hamburgs Stadtgebiet enthält z. B. viel Wattenmeer, das keinem Stadtteil gehört.
+    """
     city_area = to_shape(city.boundary).area or 1
-    return [
-        {
+    stats = []
+    for level, items in sorted(by_level.items()):
+        geoms = [i["geom"] for i in items]
+        stat = {
             "admin_level": level,
             "count": len(items),
-            "coverage": round(min(1.0, sum(i["geom"].area for i in items) / city_area), 3),
+            "coverage": round(min(1.0, sum(g.area for g in geoms) / city_area), 3),
         }
-        for level, items in sorted(by_level.items())
-    ]
+        if points:
+            stat["location_coverage"] = round(_share_covered(geoms, points), 3)
+        stats.append(stat)
+    return stats
+
+
+def _coverage_metric(stat: dict) -> float:
+    return stat.get("location_coverage", stat["coverage"])
 
 
 def choose_level(stats: list[dict]) -> int | None:
-    """Feinste Ebene mit guter Abdeckung; sonst die mit der besten Abdeckung."""
+    """Feinste Ebene, die die Lokale (bzw. ohne Lokale: die Fläche) gut abdeckt; sonst die beste Abdeckung."""
     usable = [s for s in stats if MIN_AREAS <= s["count"] <= MAX_AREAS]
     if not usable:
         return None
-    good = [s for s in usable if s["coverage"] >= GOOD_COVERAGE]
+    good = [s for s in usable if _coverage_metric(s) >= GOOD_COVERAGE]
     if good:
         return max(good, key=lambda s: s["count"])["admin_level"]
-    return max(usable, key=lambda s: s["coverage"])["admin_level"]
+    return max(usable, key=_coverage_metric)["admin_level"]
 
 
 async def _replace_areas(db: AsyncSession, city: City, items: list[dict], source: str, level: int | None) -> int:
@@ -262,17 +297,21 @@ async def import_osm_areas(db: AsyncSession, city: City, admin_level: int | None
     if city.area_source == "upload" and not force:
         return {"skipped": True, "reason": "Stadt nutzt hochgeladene Gebiete"}
     by_level = await fetch_area_candidates(city)
-    stats = level_stats(city, by_level)
+    points = await city_points(db, city)
+    stats = level_stats(city, by_level, points)
     level = admin_level or choose_level(stats)
     if level is None or level not in by_level:
         return {"skipped": True, "reason": "Keine passende Gebietsebene in OSM gefunden", "levels": stats}
     items = list(by_level[level])
     # Viele Städte sind in OSM nur teilweise unterteilt (z. B. Potsdam: nur eingemeindete Ortsteile).
-    # Den Rest als eigenes Gebiet ergänzen, damit jedes Lokal einem Gebiet zugeordnet ist.
+    # Den Rest als eigenes Gebiet ergänzen, damit jedes Lokal einem Gebiet zugeordnet ist –
+    # aber nur, wenn dort auch Lokale liegen (Hamburgs Wattenmeer braucht kein leeres Restgebiet).
     boundary = to_shape(city.boundary)
     rest = _to_multipolygon(boundary.difference(unary_union([i["geom"] for i in items])))
     if rest is not None and rest.area / boundary.area > REST_AREA_MIN_SHARE:
-        items.append({"key": "rest", "name": f"{city.name} (übriges Stadtgebiet)", "geom": rest})
+        prepared_rest = prep(rest)
+        if not points or any(prepared_rest.covers(p) for p in points):
+            items.append({"key": "rest", "name": f"{city.name} (übriges Stadtgebiet)", "geom": rest})
     count = await _replace_areas(db, city, items, "osm", level)
     logger.info("Imported %d OSM areas (admin_level %d) for '%s'", count, level, city.name)
     return {"skipped": False, "admin_level": level, "count": count, "levels": stats}

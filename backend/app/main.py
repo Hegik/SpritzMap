@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.database import Base
 from app.api.routes import auth, locations, prices, drinks, moderation, admin, cities, photos, config
-from app.services.osm_sync import run_sync
+from app.services.city_jobs import run_city_jobs, fail_interrupted_runs
 from datetime import datetime, timedelta, timezone
 import logging
 
@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
-# Gestaffelter OSM-Sync: pro Tick höchstens eine fällige Stadt (siehe services/osm_sync.py)
+# Gestaffelte OSM-Warteschlange: pro Tick wenige fällige Städte nacheinander (siehe services/city_jobs.py)
 OSM_SYNC_TICK_MINUTES = 10
 
 
 async def scheduled_osm_sync():
     try:
-        await run_sync()
+        await run_city_jobs()
     except Exception as e:
         logger.warning("OSM sync tick failed: %s", e)
 
@@ -38,6 +38,8 @@ async def lifespan(app: FastAPI):
     # Create tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    await fail_interrupted_runs()
 
     # Kein blockierender Sync beim Start mehr: der erste Tick läuft kurz nach dem Hochfahren
     scheduler.add_job(

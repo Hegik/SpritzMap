@@ -25,7 +25,7 @@
     priced_location_count: number;
   }
   interface SearchResult { osm_relation_id: number; name: string; state: string | null; type: string; display_name: string }
-  interface LevelStat { admin_level: number; count: number; coverage: number }
+  interface LevelStat { admin_level: number; count: number; coverage: number; location_coverage?: number }
   interface SyncRun {
     id: number; started_at: string; finished_at: string | null; status: string; server: string | null;
     elements: number; created: number; updated: number; deactivated: number; error: string | null;
@@ -326,7 +326,9 @@
                     {#each levels as l (l.admin_level)}
                       <label class="level">
                         <input type="radio" name="level-{city.id}" value={l.admin_level} bind:group={chosenLevel} />
-                        Ebene {l.admin_level}: {l.count} Gebiete, {Math.round(l.coverage * 100)} % Abdeckung
+                        Ebene {l.admin_level}: {l.count} Gebiete
+                        {#if l.location_coverage != null}· {Math.round(l.location_coverage * 100)} % der Lokale{/if}
+                        · {Math.round(l.coverage * 100)} % der Fläche
                         {#if l.admin_level === recommended}<span class="rec">empfohlen</span>{/if}
                       </label>
                     {/each}
