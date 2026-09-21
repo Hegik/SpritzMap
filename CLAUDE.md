@@ -95,6 +95,13 @@ Change `PRICE_TIER_1_MAX` / `PRICE_TIER_2_MAX` in `.env` to adjust without code 
 - `locations.geom` is a PostGIS `POINT` (SRID 4326)
 - Color intensity: `price_entries.color_value` is 0–255; the map uses the **average of the 50 most recent entries** per location+drink
 
+## Login (Authentik)
+
+- `AUTH_MODE` (backend env): `legacy` (own accounts, default) → `both` (transition: OIDC + old login, no new local sign-ups) → `authentik` (OIDC only)
+- The backend is the OIDC client (`app/services/oidc.py`, routes in `app/api/routes/oidc.py`): code flow + PKCE, validates the ID token, then issues the usual SpritzMap JWT via a one-time code (`/auth/oidc/exchange`). Roles and city assignments stay in SpritzMap; users are linked **only** via `users.authentik_sub` (Authentik user UUID), never by e-mail
+- Authentik config lives in `authentik/` (blueprint, apply script, step-0 script, runbook in `authentik/README.md`). Accounts from SpritzMap sign-up land in group `spritzmap-users` and may use **only** the `spritzmap` application; every other Authentik application must be bound to `hegik-services`
+- Account deletion: SpritzMap anonymizes its data, then sends the user to Authentik's unenrollment flow (the backend holds no Authentik admin token)
+
 ## Photos & AI analysis
 
 - All heavy lifting runs in the browser: compression (max 1600 px WebP, 400 px thumb) and AI suggestions. The backend only validates (Pillow `verify`, WebP/JPEG, ≤ 2000 px, ≤ 3 MB) and stores files.

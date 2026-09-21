@@ -21,6 +21,7 @@ from app.schemas.user import UserRegister, UserOut, Token, ForgotPassword, Reset
 from fastapi.responses import JSONResponse
 from app.api.deps import get_current_user, moderated_city_ids
 from app.services.email import send_verification_email, send_reset_email
+from app.services import oidc
 import logging
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,22 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 limiter = Limiter(key_func=get_remote_address)
 
 
-@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+# ── Übergang zu Authentik (siehe routes/oidc.py) ──────────────────────────────
+# legacy:    alles wie bisher
+# both:      alter Login/Reset läuft weiter, aber KEINE neuen lokalen Konten (sonst entstünden unverknüpfte Konten)
+# authentik: lokale Konten sind abgeschaltet
+def legacy_registration() -> None:
+    if settings.AUTH_MODE != "legacy":
+        raise HTTPException(status_code=410, detail="Registrierung läuft jetzt über den SpritzMap-Login (Authentik)")
+
+
+def legacy_login() -> None:
+    if settings.AUTH_MODE == "authentik":
+        raise HTTPException(status_code=410, detail="Anmeldung läuft jetzt über den SpritzMap-Login (Authentik)")
+
+
+@router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(legacy_registration)])
 @limiter.limit("5/minute")
 async def register(request: Request, data: UserRegister, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == data.email))
@@ -58,7 +74,7 @@ async def register(request: Request, data: UserRegister, db: AsyncSession = Depe
     return user
 
 
-@router.get("/verify")
+@router.get("/verify", dependencies=[Depends(legacy_login)])
 async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.verification_token == token))
     user = result.scalar_one_or_none()
@@ -71,7 +87,7 @@ async def verify_email(token: str, db: AsyncSession = Depends(get_db)):
     return {"detail": "E-Mail-Adresse bestätigt"}
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=Token, dependencies=[Depends(legacy_login)])
 @limiter.limit("10/minute")
 async def login(
     request: Request,
@@ -80,7 +96,7 @@ async def login(
 ):
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalar_one_or_none()
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    if not user or not user.hashed_password or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")
@@ -91,13 +107,13 @@ async def login(
     return {"access_token": token}
 
 
-@router.post("/forgot-password")
+@router.post("/forgot-password", dependencies=[Depends(legacy_login)])
 @limiter.limit("3/minute")
 async def forgot_password(request: Request, data: ForgotPassword, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == data.email))
     user = result.scalar_one_or_none()
     # Immer 200 zurückgeben — kein Hinweis ob E-Mail existiert
-    if not user:
+    if not user or user.authentik_sub:
         return {"detail": "Falls die E-Mail existiert, wurde ein Link gesendet"}
 
     token = secrets.token_urlsafe(32)
@@ -113,7 +129,7 @@ async def forgot_password(request: Request, data: ForgotPassword, db: AsyncSessi
     return {"detail": "Falls die E-Mail existiert, wurde ein Link gesendet"}
 
 
-@router.post("/reset-password")
+@router.post("/reset-password", dependencies=[Depends(legacy_login)])
 async def reset_password(data: ResetPassword, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.reset_token == data.token))
     user = result.scalar_one_or_none()
@@ -137,13 +153,13 @@ async def me(current_user: User = Depends(get_current_user), db: AsyncSession = 
     return out
 
 
-@router.put("/me", response_model=UserOut)
+@router.put("/me", response_model=UserOut, dependencies=[Depends(legacy_login)])
 async def update_me(
     data: UpdateProfile,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not verify_password(data.current_password, current_user.hashed_password):
+    if not current_user.hashed_password or not verify_password(data.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Falsches Passwort")
 
     if data.username and data.username != current_user.username:
@@ -163,13 +179,13 @@ async def update_me(
     return current_user
 
 
-@router.put("/me/password")
+@router.put("/me/password", dependencies=[Depends(legacy_login)])
 async def change_password(
     data: UpdatePassword,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if not verify_password(data.current_password, current_user.hashed_password):
+    if not current_user.hashed_password or not verify_password(data.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Falsches aktuelles Passwort")
     current_user.hashed_password = get_password_hash(data.new_password)
     await db.commit()
@@ -283,7 +299,7 @@ async def my_entries(
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
-@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/me")
 async def delete_me(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -299,8 +315,12 @@ async def delete_me(
         .where(PriceEntry.user_id == current_user.id)
         .values(user_id=None)
     )
+    linked = current_user.authentik_sub is not None
     db.add(UserDeletionLog())
     await db.delete(current_user)
     await db.commit()
     for photo in user_photos:
         delete_photo_files(photo)
+    # Das Authentik-Konto löscht der Nutzer selbst im Löschflow (nur reine SpritzMap-Konten, siehe Blueprint).
+    # So braucht das Backend kein Authentik-Token mit Rechten über andere Konten.
+    return {"deleted": True, "unenrollment_url": oidc.unenrollment_url() if linked else None}

@@ -36,6 +36,21 @@ class Settings(BaseSettings):
     # CORS
     FRONTEND_URL: str = "http://localhost:5173"
 
+    # Login: "legacy" (eigene Konten), "both" (Übergang: beides, aber keine neuen Legacy-Registrierungen),
+    # "authentik" (nur noch OIDC über Authentik)
+    AUTH_MODE: str = "legacy"
+    # Öffentliche Authentik-Adresse der SpritzMap-Brand (Browser-Redirects, Konto-Links)
+    AUTHENTIK_URL: str = "https://spritz.auth.hegik.de"
+    # Optional: Server-zu-Server-Aufrufe (Discovery, Token, JWKS) über eine interne Adresse; der Host-Header
+    # bleibt der öffentliche, damit Authentik Brand und Issuer gleich auflöst
+    AUTHENTIK_INTERNAL_URL: str = ""
+    OIDC_CLIENT_ID: str = "spritzmap"
+    OIDC_CLIENT_SECRET: str = ""
+    OIDC_REDIRECT_URI: str = "http://localhost:8000/auth/oidc/callback"
+    OIDC_APP_SLUG: str = "spritzmap"
+    OIDC_ENROLLMENT_FLOW: str = "spritzmap-enrollment"
+    OIDC_UNENROLLMENT_FLOW: str = "spritzmap-unenrollment"
+
     PRICE_TIERS: ClassVar[dict] = {
         1: {"label": "€", "max": None},
         2: {"label": "€€", "max": None},

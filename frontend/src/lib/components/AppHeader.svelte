@@ -3,6 +3,8 @@
   import { goto } from '$app/navigation';
   import { authStore, isLoggedIn, isModerator, user } from '$lib/stores/auth';
   import { t } from '$lib/i18n';
+  import { api } from '$lib/api/client';
+  import { authConfig } from '$lib/stores/authConfig';
 
   let {
     onlogintrigger = () => {},
@@ -30,9 +32,17 @@
     goto('/moderation');
   }
 
-  function logout() {
+  async function logout() {
     closeDropdown();
     authStore.logout();
+    if ($authConfig.mode !== 'legacy') {
+      // Auch die Sitzung beim SpritzMap-Login beenden, sonst meldet der nächste Klick sofort wieder an
+      try {
+        const { url } = await api.get<{ url: string }>('/auth/oidc/logout-url');
+        window.location.href = url;
+        return;
+      } catch { /* dann eben nur lokal abmelden */ }
+    }
     goto('/');
   }
 </script>

@@ -17,7 +17,10 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
+    # Nur noch für Legacy-Konten (Rollback-Fenster); Authentik-Konten haben kein lokales Passwort
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Authentik-User-UUID (OIDC `sub`, sub_mode=user_uuid) – einzige Verknüpfung, nie über die E-Mail
+    authentik_sub: Mapped[str | None] = mapped_column(String(64), unique=True, index=True, nullable=True)
     role: Mapped[UserRole] = mapped_column(SAEnum(UserRole), default=UserRole.user)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

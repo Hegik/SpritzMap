@@ -12,7 +12,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.config import settings
 from app.core.database import engine, AsyncSessionLocal
 from app.core.database import Base
-from app.api.routes import auth, locations, prices, drinks, moderation, admin, cities, photos, config
+from app.api.routes import auth, locations, prices, drinks, moderation, admin, cities, photos, config, oidc
 from app.services.city_jobs import run_city_jobs, fail_interrupted_runs
 from datetime import datetime, timedelta, timezone
 import logging
@@ -77,6 +77,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router)
+app.include_router(oidc.router)
 app.include_router(locations.router)
 app.include_router(prices.router)
 app.include_router(drinks.router)

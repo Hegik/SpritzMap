@@ -2,6 +2,8 @@
   import { authStore } from '$lib/stores/auth';
   import { api } from '$lib/api/client';
   import { t } from '$lib/i18n';
+  import { authConfig, loadAuthConfig, oidcLoginUrl } from '$lib/stores/authConfig';
+  import { onMount } from 'svelte';
 
   let {
     open = $bindable(false),
@@ -15,6 +17,11 @@
   let error = $state('');
   let info = $state('');
   let loading = $state(false);
+  // Im Übergangsmodus "both" bleibt der alte Passwort-Login als Rückfall erreichbar
+  let showLegacy = $state(false);
+  const sso = $derived($authConfig.mode !== 'legacy');
+
+  onMount(loadAuthConfig);
 
   async function submit() {
     error = '';
@@ -58,6 +65,17 @@
       onkeydown={(e) => e.stopPropagation()}
       role="presentation"
     >
+      {#if sso && !showLegacy}
+        <h2>{$t.auth.sso_heading}</h2>
+        <p class="sso-intro">{$t.auth.sso_intro}</p>
+        <div class="sso-buttons">
+          <a class="btn-sso" href={oidcLoginUrl(false)}>{$t.auth.btn_sso_login}</a>
+          <a class="btn-sso secondary" href={oidcLoginUrl(true)}>{$t.auth.btn_sso_register}</a>
+        </div>
+        {#if $authConfig.mode === 'both'}
+          <button class="switch" onclick={() => { showLegacy = true; mode = 'login'; }}>{$t.auth.legacy_hint}</button>
+        {/if}
+      {:else}
       <h2>{mode === 'login' ? $t.auth.heading_login : mode === 'register' ? $t.auth.heading_register : $t.auth.heading_forgot}</h2>
 
       <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
@@ -98,13 +116,18 @@
         </button>
       </form>
 
-      <button class="switch" onclick={() => { mode = mode === 'login' ? 'register' : 'login'; error = ''; info = ''; }}>
-        {mode === 'login' ? $t.auth.switch_to_register : mode === 'register' ? $t.auth.switch_to_login : $t.auth.back_to_login}
-      </button>
+      {#if !sso}
+        <button class="switch" onclick={() => { mode = mode === 'login' ? 'register' : 'login'; error = ''; info = ''; }}>
+          {mode === 'login' ? $t.auth.switch_to_register : mode === 'register' ? $t.auth.switch_to_login : $t.auth.back_to_login}
+        </button>
+      {:else if mode !== 'login'}
+        <button class="switch" onclick={() => { mode = 'login'; error = ''; info = ''; }}>{$t.auth.back_to_login}</button>
+      {/if}
       {#if mode === 'login'}
         <button class="switch" onclick={() => { mode = 'forgot'; error = ''; }}>
           {$t.auth.forgot_password}
         </button>
+      {/if}
       {/if}
     </div>
   </div>
@@ -130,6 +153,20 @@
   }
 
   h2 { margin: 0 0 1.5rem; font-size: 1.25rem; }
+
+  .sso-intro { margin: -0.75rem 0 1.25rem; color: #666; font-size: 0.9rem; line-height: 1.4; }
+  .sso-buttons { display: flex; flex-direction: column; gap: 0.6rem; }
+  .btn-sso {
+    display: block;
+    padding: 10px;
+    border-radius: 6px;
+    background: #e8500a;
+    color: white;
+    text-align: center;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .btn-sso.secondary { background: white; color: #e8500a; border: 1.5px solid #e8500a; }
 
   form { display: flex; flex-direction: column; gap: 1rem; }
 

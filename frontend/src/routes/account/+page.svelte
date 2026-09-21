@@ -7,6 +7,7 @@
   import type { GlassType, Photo } from '$lib/types/photo';
   import { t } from '$lib/i18n';
   import AppHeader from '$lib/components/AppHeader.svelte';
+  import { authConfig, loadAuthConfig } from '$lib/stores/authConfig';
   import { buildIconHtml, buildUnavailableIconHtml } from '$lib/utils/markerIcon';
 
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
@@ -106,7 +107,11 @@
     }
   }
 
+  // Mit Authentik verwaltet der SpritzMap-Login Name, E-Mail, Passwort und 2FA
+  const managed = $derived($authConfig.mode !== 'legacy');
+
   onMount(() => {
+    loadAuthConfig();
     if (!$isLoggedIn) { goto('/'); return; }
     profileUsername = $user?.username ?? '';
     profileEmail = $user?.email ?? '';
@@ -193,9 +198,11 @@
     deleteStatus = 'loading';
     deleteError = '';
     try {
-      await api.delete('/auth/me');
+      const res = await api.delete<{ unenrollment_url?: string | null }>('/auth/me');
       authStore.logout();
-      goto('/');
+      // SpritzMap-Daten sind weg; das Login-Konto löscht der Nutzer im SpritzMap-Login selbst
+      if (res?.unenrollment_url) window.location.href = res.unenrollment_url;
+      else goto('/');
     } catch (e: unknown) {
       deleteError = e instanceof Error ? e.message : $t.account.error_generic;
       deleteStatus = 'idle';
@@ -223,7 +230,12 @@
           <dt>{$t.account.label_email}</dt>
           <dd>{$user?.email}</dd>
         </dl>
-        <button class="btn-primary" onclick={startEdit}>{$t.account.btn_edit}</button>
+        {#if managed}
+          <p class="hint">{$t.account.managed_hint}</p>
+          <a class="btn-primary" href={$authConfig.account_url} target="_blank" rel="noopener">{$t.account.btn_manage_account}</a>
+        {:else}
+          <button class="btn-primary" onclick={startEdit}>{$t.account.btn_edit}</button>
+        {/if}
       {:else}
         <form onsubmit={(e) => { e.preventDefault(); submitProfile(); }}>
           <label>
@@ -250,7 +262,8 @@
       {/if}
     </section>
 
-    <!-- ── Passwort ändern ── -->
+    <!-- ── Passwort ändern (nur ohne Authentik) ── -->
+    {#if !managed}
     <section class="card">
       <h2>{$t.account.section_password}</h2>
       <form onsubmit={(e) => { e.preventDefault(); submitPassword(); }}>
@@ -273,6 +286,7 @@
         </button>
       </form>
     </section>
+    {/if}
 
     <!-- ── Meine Einträge ── -->
     <section class="card entries-card">
@@ -454,6 +468,8 @@
 {/if}
 
 <style>
+  .hint { margin: 0.5rem 0 1rem; color: #666; font-size: 0.875rem; line-height: 1.4; }
+  a.btn-primary { display: inline-block; text-decoration: none; }
   .page {
     min-height: 100dvh;
     background: #f5f5f5;
