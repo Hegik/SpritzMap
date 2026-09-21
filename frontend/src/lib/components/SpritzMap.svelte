@@ -76,10 +76,12 @@
     if (drinkId) params.set('drink_id', String(drinkId));
     if (priceTier) params.set('price_tier', priceTier);
 
+    // Lokale ohne Eintrag (Fragezeichen-/Leerglas) sind nur zum Eintragen da → nur für eingeloggte Nutzer
+    const showUnpriced = $isLoggedIn;
     const [res, nodataRes, emptyRes] = await Promise.all([
       fetch(`${API_URL}/locations/geojson?${params}`),
-      drinkId ? fetch(`${API_URL}/locations/geojson/nodata?city_id=${city.id}&drink_id=${drinkId}`) : null,
-      drinkId ? null : fetch(`${API_URL}/locations/geojson/empty?city_id=${city.id}`),
+      showUnpriced && drinkId ? fetch(`${API_URL}/locations/geojson/nodata?city_id=${city.id}&drink_id=${drinkId}`) : null,
+      showUnpriced && !drinkId ? fetch(`${API_URL}/locations/geojson/empty?city_id=${city.id}`) : null,
     ]);
 
     if (!res.ok) return;
@@ -99,13 +101,13 @@
       }
     }
 
-    if (nodataRes?.ok || !drinkId) {
+    if (nodataRes?.ok) {
       if (!seenKeys.has('__nodata__')) {
         seenKeys.add('__nodata__');
         iconJobs.push({ key: '__nodata__', promise: getNodataGlassDataUrl() });
       }
     }
-    if (emptyRes || !drinkId) {
+    if (emptyRes?.ok) {
       if (!seenKeys.has('__empty__')) {
         seenKeys.add('__empty__');
         iconJobs.push({ key: '__empty__', promise: getEmptyGlassDataUrl() });
@@ -453,6 +455,7 @@
     let unsubDrink: (() => void) | undefined;
     let unsubTier: (() => void) | undefined;
     let unsubCity: (() => void) | undefined;
+    let unsubLogin: (() => void) | undefined;
 
     (async () => {
     // Load cities before map init
@@ -580,6 +583,13 @@
         if (firstCity) { firstCity = false; return; }
         if (city) applyCity(city);
       });
+
+      // Ein-/Ausloggen → Lokale ohne Eintrag ein-/ausblenden
+      let firstLogin = true;
+      unsubLogin = isLoggedIn.subscribe(() => {
+        if (firstLogin) { firstLogin = false; return; }
+        reloadMarkers();
+      });
     });
     })();
 
@@ -591,6 +601,7 @@
       unsubDrink?.();
       unsubTier?.();
       unsubCity?.();
+      unsubLogin?.();
     };
   });
 
@@ -645,7 +656,7 @@
   !
 </button>
 
-<MapLegend zoom={mapZoom} wmsMaxZoom={WMS_MAX_ZOOM} hasWms={$selectedCity?.wms_layer != null} drinkColor={getDrinkColor($selectedDrinkId)} />
+<MapLegend showUnpriced={$isLoggedIn} zoom={mapZoom} wmsMaxZoom={WMS_MAX_ZOOM} hasWms={$selectedCity?.wms_layer != null} drinkColor={getDrinkColor($selectedDrinkId)} />
 
 <HelpModal bind:open={helpOpen} />
 <PhotoLightbox bind:open={lightboxOpen} bind:photos={lightboxPhotos} bind:index={lightboxIndex} />

@@ -8,11 +8,13 @@
     wmsMaxZoom,
     hasWms,
     drinkColor,
+    showUnpriced,
   }: {
     zoom: number;
     wmsMaxZoom: number;
     hasWms: boolean;
     drinkColor: string;
+    showUnpriced: boolean;
   } = $props();
 
   interface PriceTier { label: string; min: number | null; max: number | null }
@@ -78,7 +80,9 @@
           {#each markers as m}
             <div class="row"><span class="icon">{@html m.html}</span>{m.label}</div>
           {/each}
-          <div class="row"><span class="icon">{@html buildNodataIconHtml(28)}</span>{$t.legend.marker_nodata}</div>
+          {#if showUnpriced}
+            <div class="row"><span class="icon">{@html buildNodataIconHtml(28)}</span>{$t.legend.marker_nodata}</div>
+          {/if}
         </section>
       {/if}
 
