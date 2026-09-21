@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 
 interface User {
   id: number;
@@ -13,6 +13,8 @@ const token = writable<string | null>(
   typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null
 );
 export const user = writable<User | null>(null);
+// true, sobald feststeht, ob (und als wer) jemand angemeldet ist – Seiten mit Rollenprüfung warten darauf
+export const userLoaded = writable(false);
 
 token.subscribe((val) => {
   if (typeof localStorage !== 'undefined') {
@@ -45,5 +47,16 @@ export const authStore = {
   logout() {
     token.set(null);
     user.set(null);
+  },
+  // Einmal pro Seitenaufruf im Root-Layout: Profil zum gespeicherten Token laden
+  async init(fetchMe: () => Promise<User>) {
+    if (get(token)) {
+      try {
+        user.set(await fetchMe());
+      } catch {
+        this.logout();
+      }
+    }
+    userLoaded.set(true);
   },
 };

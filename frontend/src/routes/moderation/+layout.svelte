@@ -1,16 +1,14 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { isLoggedIn, isModerator, user } from '$lib/stores/auth';
+  import { isLoggedIn, isModerator, user, userLoaded } from '$lib/stores/auth';
   import { t } from '$lib/i18n';
 
   let { children } = $props();
 
-  onMount(() => {
-    if (!$isLoggedIn || !$isModerator) {
-      goto('/');
-    }
+  // Erst entscheiden, wenn das Profil geladen ist – sonst fliegt man beim Neuladen raus
+  $effect(() => {
+    if ($userLoaded && (!$isLoggedIn || !$isModerator)) goto('/');
   });
 
   const navItems = $derived([
@@ -63,7 +61,7 @@
     </div>
 
     <main class="mod-content">
-      {@render children()}
+      {#if $userLoaded && $isModerator}{@render children()}{/if}
     </main>
   </div>
 </div>

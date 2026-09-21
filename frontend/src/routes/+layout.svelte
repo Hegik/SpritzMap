@@ -1,7 +1,13 @@
 <script lang="ts">
 	import favicon from '$lib/assets/favicon.svg';
+	import { onMount } from 'svelte';
+	import { api } from '$lib/api/client';
+	import { authStore } from '$lib/stores/auth';
 
 	let { children } = $props();
+
+	// Profil hier statt auf einzelnen Seiten laden, damit auch ein Neuladen von /account oder /moderation klappt
+	onMount(() => authStore.init(() => api.get('/auth/me')));
 </script>
 
 <svelte:head>

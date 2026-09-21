@@ -4,7 +4,6 @@
   import FilterPanel from '$lib/components/FilterPanel.svelte';
   import AuthModal from '$lib/components/AuthModal.svelte';
   import AppHeader from '$lib/components/AppHeader.svelte';
-  import { authStore, isLoggedIn } from '$lib/stores/auth';
   import { drinks, selectedDrinkId } from '$lib/stores/map';
   import { api } from '$lib/api/client';
 
@@ -16,15 +15,6 @@
     drinks.set(list);
     const aperol = list.find((d: { name: string }) => d.name.toLowerCase().includes('aperol'));
     if (aperol) selectedDrinkId.set(aperol.id);
-
-    if ($isLoggedIn) {
-      try {
-        const me = await api.get<{ id: number; email: string; username: string; role: 'user' | 'moderator' | 'admin' }>('/auth/me');
-        authStore.setUser(me);
-      } catch {
-        authStore.logout();
-      }
-    }
   });
 </script>
 
