@@ -13,7 +13,9 @@ export interface CityMeta {
   center_lat: number;
   center_lon: number;
   default_zoom: number;
-  wms_layer: string | null;
+  state: string | null;
+  bbox: string;
+  has_areas: boolean;
 }
 
 export const drinks = writable<Drink[]>([]);

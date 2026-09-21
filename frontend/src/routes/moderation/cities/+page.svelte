@@ -1,219 +1,60 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
   import { user } from '$lib/stores/auth';
   import { api } from '$lib/api/client';
-
-  const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
 
   interface City {
     id: number;
     name: string;
     slug: string;
-    bbox: string;
-    center_lat: number;
-    center_lon: number;
-    default_zoom: number;
+    state: string | null;
+    osm_relation_id: number | null;
+    has_boundary: boolean;
     is_active: boolean;
     osm_sync_enabled: boolean;
-    wms_layer: string | null;
+    area_source: 'osm' | 'upload' | 'none';
+    area_admin_level: number | null;
+    last_sync_at: string | null;
+    last_sync_status: 'success' | 'failed' | null;
+    last_sync_error: string | null;
+    next_sync_at: string | null;
+    sync_failures: number;
+    area_count: number;
+    location_count: number;
+    priced_location_count: number;
+  }
+  interface SearchResult { osm_relation_id: number; name: string; state: string | null; type: string; display_name: string }
+  interface LevelStat { admin_level: number; count: number; coverage: number }
+  interface SyncRun {
+    id: number; started_at: string; finished_at: string | null; status: string; server: string | null;
+    elements: number; created: number; updated: number; deactivated: number; error: string | null;
   }
 
   let cities = $state<City[]>([]);
   let loading = $state(true);
   let error = $state('');
-  let syncingId = $state<number | null>(null);
-  let syncMsg = $state('');
+  let notice = $state('');
 
-  // ── Wizard state ──────────────────────────────────────────────────────────
-  let showWizard = $state(false);
-  let wizardStep = $state(1);
-  let saving = $state(false);
-  let formError = $state('');
-  let newCityId = $state<number | null>(null);
-  let step3Done = $state(false);
+  // ── Stadt hinzufügen ──────────────────────────────────────────────────────
+  let query = $state('');
+  let searching = $state(false);
+  let results = $state<SearchResult[]>([]);
+  let creatingId = $state<number | null>(null);
 
-  let form = $state({
-    name: '',
-    slug: '',
-    bbox: '',
-    center_lat: '',
-    center_lon: '',
-    default_zoom: '12',
-    wms_layer: '',
-  });
+  // ── Detailbereich pro Stadt ───────────────────────────────────────────────
+  let openId = $state<number | null>(null);
+  let busy = $state('');
+  let levels = $state<LevelStat[] | null>(null);
+  let recommended = $state<number | null>(null);
+  let chosenLevel = $state<number | null>(null);
+  let runs = $state<SyncRun[]>([]);
+  let uploadFile = $state<File | null>(null);
+  let uploadProps = $state<string[]>([]);
+  let keyProp = $state('');
+  let nameProp = $state('');
 
-  // SQL snippet for LOR import (no city_id yet — linked after city creation in step 3)
-  const lorSqlSnippet = () => `-- Beispiel: Bezirk einfügen (für jedes Gebiet wiederholen)
--- city_id wird erst nach Stadtanlage in Schritt 3 verknüpft
-INSERT INTO public.lor (lor_schluessel, pr_name, geom)
-VALUES (
-  '010101',          -- eindeutiger Schlüssel
-  'Altona-Altstadt', -- Bezirksname
-  ST_GeomFromGeoJSON('{"type":"Polygon","coordinates":[...]}')
-);`;
-
-  // SQL snippet to link LOR rows to the newly created city (step 3)
-  const lorLinkSnippet = () => `-- LOR-Daten mit der neuen Stadt verknüpfen
-UPDATE public.lor
-SET city_id = ${newCityId ?? 'CITY_ID'}
-WHERE city_id IS NULL;`;
-
-  const geoserverSqlSnippet = () => `WITH lor_stats AS (
-  SELECT
-    l.lor_schluessel,
-    l.geom,
-    AVG(pe.price)        AS avg_price,
-    AVG(pe.color_value)  AS avg_color_value,
-    COUNT(pe.id)         AS entry_count
-  FROM lor l
-  LEFT JOIN locations loc
-    ON ST_Within(loc.geom, ST_Transform(l.geom, 4326))
-  LEFT JOIN price_entries pe
-    ON pe.location_id = loc.id
-    AND pe.is_current   = TRUE
-    AND pe.unavailable  = FALSE
-    AND pe.drink_id     = %drink_id%
-  WHERE l.city_id = (SELECT id FROM cities WHERE slug = '${form.slug || 'CITY_SLUG'}')
-  GROUP BY l.lor_schluessel, l.geom
-),
-global_stats AS (
-  SELECT
-    MAX(avg_price) AS max_price,
-    MIN(avg_price) AS min_price
-  FROM lor_stats
-  WHERE avg_price IS NOT NULL
-),
-drink_meta AS (
-  SELECT color_hex
-  FROM drinks
-  WHERE id = %drink_id%
-)
-SELECT
-  s.lor_schluessel,
-  s.geom,
-  s.avg_price,
-  s.entry_count,
-  dm.color_hex AS drink_color,
-  CASE
-    WHEN s.avg_price IS NULL OR g.max_price IS NULL OR g.min_price <= 0
-    THEN NULL
-    WHEN g.max_price = g.min_price
-    THEN 50.0 * (COALESCE(s.avg_color_value, 128) / 128.0)
-    ELSE LEAST(100.0, GREATEST(0.0,
-      (LN(g.max_price / s.avg_price) / LN(g.max_price / g.min_price))
-      * (COALESCE(s.avg_color_value, 128) / 128.0)
-      * 100.0
-    ))
-  END AS spritz_index
-FROM lor_stats s
-CROSS JOIN global_stats g
-CROSS JOIN drink_meta dm`;
-
-  let copied = $state(false);
-  function copyGeoserverSql() {
-    navigator.clipboard.writeText(geoserverSqlSnippet());
-    copied = true;
-    setTimeout(() => { copied = false; }, 2000);
-  }
-
-  let copiedLorLink = $state(false);
-  function copyLorLinkSql() {
-    navigator.clipboard.writeText(lorLinkSnippet());
-    copiedLorLink = true;
-    setTimeout(() => { copiedLorLink = false; }, 2000);
-  }
-
-  // Auto-generate slug and wms_layer from name
-  function onNameInput() {
-    form.slug = form.name.toLowerCase()
-      .replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss')
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    form.wms_layer = `spritzmap:lor_index_${form.slug}`;
-  }
-
-  async function loadCities() {
-    loading = true;
-    error = '';
-    try {
-      cities = await api.get<City[]>('/admin/cities');
-    } catch (e: any) {
-      error = e.message;
-    } finally {
-      loading = false;
-    }
-  }
-
-  async function triggerSync(id: number) {
-    syncingId = id;
-    syncMsg = '';
-    try {
-      const data = await api.post<{ detail: string }>(`/admin/cities/${id}/sync`, {});
-      syncMsg = data.detail ?? 'Sync gestartet';
-      setTimeout(() => { syncMsg = ''; }, 4000);
-    } catch (e: any) {
-      syncMsg = 'Fehler: ' + e.message;
-    } finally {
-      syncingId = null;
-    }
-  }
-
-  async function toggleActive(city: City) {
-    await api.patch(`/admin/cities/${city.id}`, { is_active: !city.is_active });
-    await loadCities();
-  }
-
-  // Step 1: Validate name/slug only — no DB write yet
-  function advanceStep1() {
-    formError = '';
-    if (!form.name.trim() || !form.slug.trim()) {
-      formError = 'Bitte Stadtname und Slug eingeben.';
-      return;
-    }
-    wizardStep = 2;
-  }
-
-  // Step 3: Create the city record in DB
-  async function saveStep3() {
-    saving = true;
-    formError = '';
-    try {
-      const body = {
-        name: form.name.trim(),
-        slug: form.slug.trim(),
-        bbox: form.bbox.trim(),
-        center_lat: parseFloat(form.center_lat),
-        center_lon: parseFloat(form.center_lon),
-        default_zoom: parseInt(form.default_zoom),
-        osm_sync_enabled: true,
-        wms_layer: form.wms_layer.trim() || null,
-      };
-      if (!body.name || !body.slug || !body.bbox || isNaN(body.center_lat) || isNaN(body.center_lon)) {
-        throw new Error('Bitte alle Pflichtfelder ausfüllen.');
-      }
-      const data = await api.post<{ id: number; slug: string }>('/admin/cities', body);
-      newCityId = data.id;
-      step3Done = true;
-    } catch (e: any) {
-      formError = e.message;
-    } finally {
-      saving = false;
-    }
-  }
-
-  function finishWizard() {
-    loadCities();
-    showWizard = false;
-    wizardStep = 1;
-    step3Done = false;
-    form = { name: '', slug: '', bbox: '', center_lat: '', center_lon: '', default_zoom: '12', wms_layer: '' };
-    newCityId = null;
-  }
-
-  function startOsmSync() {
-    if (newCityId) triggerSync(newCityId);
-    finishWizard();
-  }
+  let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
   onMount(async () => {
     if ($user?.role !== 'admin') {
@@ -221,355 +62,301 @@ CROSS JOIN drink_meta dm`;
       return;
     }
     await loadCities();
+    // Status (Sync/Gebietsimport im Hintergrund) regelmäßig aktualisieren
+    refreshTimer = setInterval(() => loadCities(true), 15000);
   });
+  onDestroy(() => clearInterval(refreshTimer));
+
+  async function loadCities(silent = false) {
+    if (!silent) loading = true;
+    try {
+      cities = await api.get<City[]>('/admin/cities');
+      if (openId !== null) runs = await api.get<SyncRun[]>(`/admin/cities/${openId}/sync-runs`);
+    } catch (e: any) {
+      if (!silent) error = e.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  function flash(msg: string) {
+    notice = msg;
+    setTimeout(() => { if (notice === msg) notice = ''; }, 5000);
+  }
+
+  async function run(label: string, fn: () => Promise<unknown>) {
+    busy = label;
+    error = '';
+    try {
+      await fn();
+    } catch (e: any) {
+      error = e.message;
+    } finally {
+      busy = '';
+    }
+  }
+
+  async function search() {
+    if (!query.trim()) return;
+    searching = true;
+    error = '';
+    try {
+      results = await api.get<SearchResult[]>(`/admin/cities/search?q=${encodeURIComponent(query.trim())}`);
+    } catch (e: any) {
+      error = e.message;
+    } finally {
+      searching = false;
+    }
+  }
+
+  async function createCity(r: SearchResult) {
+    creatingId = r.osm_relation_id;
+    error = '';
+    try {
+      await api.post('/admin/cities', { osm_relation_id: r.osm_relation_id });
+      results = [];
+      query = '';
+      flash(`${r.name} angelegt – Gebiete und Lokale werden im Hintergrund importiert.`);
+      await loadCities();
+    } catch (e: any) {
+      error = e.message;
+    } finally {
+      creatingId = null;
+    }
+  }
+
+  async function toggle(city: City, field: 'is_active' | 'osm_sync_enabled') {
+    await run(field, async () => {
+      await api.patch(`/admin/cities/${city.id}`, { [field]: !city[field] });
+      await loadCities(true);
+    });
+  }
+
+  async function openCity(city: City) {
+    if (openId === city.id) { openId = null; return; }
+    openId = city.id;
+    levels = null;
+    recommended = null;
+    chosenLevel = city.area_admin_level;
+    uploadFile = null;
+    uploadProps = [];
+    runs = await api.get<SyncRun[]>(`/admin/cities/${city.id}/sync-runs`).catch(() => []);
+  }
+
+  const syncNow = (city: City) => run('sync', async () => {
+    const r = await api.post<{ detail: string }>(`/admin/cities/${city.id}/sync`, {});
+    flash(r.detail);
+  });
+
+  const refreshBoundary = (city: City) => run('boundary', async () => {
+    await api.post(`/admin/cities/${city.id}/boundary`, {});
+    flash('Grenze aktualisiert');
+    await loadCities(true);
+  });
+
+  const loadLevels = (city: City) => run('levels', async () => {
+    const r = await api.get<{ levels: LevelStat[]; recommended: number | null }>(`/admin/cities/${city.id}/area-levels`);
+    levels = r.levels;
+    recommended = r.recommended;
+    chosenLevel = chosenLevel ?? r.recommended;
+  });
+
+  const importOsmAreas = (city: City) => run('areas', async () => {
+    if (city.area_source === 'upload' && !confirm('Hochgeladene Gebiete durch OSM-Gebiete ersetzen?')) return;
+    const r = await api.post<{ skipped: boolean; reason?: string; count?: number; admin_level?: number }>(
+      `/admin/cities/${city.id}/areas/osm`,
+      { admin_level: chosenLevel, replace_upload: city.area_source === 'upload' },
+    );
+    flash(r.skipped ? `Nicht importiert: ${r.reason}` : `${r.count} Gebiete (Ebene ${r.admin_level}) importiert`);
+    await loadCities(true);
+  });
+
+  async function onFileChosen(e: Event) {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0] ?? null;
+    uploadFile = file;
+    uploadProps = [];
+    keyProp = nameProp = '';
+    if (!file) return;
+    try {
+      // Eigenschaften des ersten Features für die Feldauswahl vorschlagen
+      const json = JSON.parse(await file.text());
+      uploadProps = Object.keys(json?.features?.[0]?.properties ?? {});
+      keyProp = uploadProps.find((p) => /schl|key|id|nr/i.test(p)) ?? uploadProps[0] ?? '';
+      nameProp = uploadProps.find((p) => /name|bez/i.test(p)) ?? uploadProps[0] ?? '';
+    } catch {
+      error = 'Datei ist kein gültiges GeoJSON';
+      uploadFile = null;
+    }
+  }
+
+  const uploadAreas = (city: City) => run('upload', async () => {
+    if (!uploadFile) return;
+    const form = new FormData();
+    form.append('file', uploadFile);
+    form.append('key_prop', keyProp);
+    form.append('name_prop', nameProp);
+    const r = await api.upload<{ count: number }>(`/admin/cities/${city.id}/areas/upload`, form);
+    flash(`${r.count} Gebiete hochgeladen`);
+    uploadFile = null;
+    uploadProps = [];
+    await loadCities(true);
+  });
+
+  function fmt(iso: string | null) {
+    return iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+  }
+
+  const AREA_SOURCE_LABEL = { osm: 'OSM', upload: 'Upload', none: 'keine' } as const;
 </script>
 
 <div class="cities-page">
   <div class="page-header">
-    <h1>Städte verwalten</h1>
-    {#if !showWizard}
-      <button class="btn-primary" onclick={() => { showWizard = true; wizardStep = 1; formError = ''; step3Done = false; }}>
-        + Neue Stadt anlegen
-      </button>
-    {/if}
+    <h1>Städte</h1>
   </div>
 
-  {#if error}
-    <div class="alert alert-error">{error}</div>
-  {/if}
+  {#if error}<div class="alert alert-error">{error}</div>{/if}
+  {#if notice}<div class="alert alert-info">{notice}</div>{/if}
 
-  {#if syncMsg}
-    <div class="alert alert-info">{syncMsg}</div>
-  {/if}
-
-  <!-- ── Wizard ────────────────────────────────────────────────────────────── -->
-  {#if showWizard}
-    <div class="wizard">
-      <!-- Progress bar -->
-      <div class="wizard-progress">
-        {#each [1,2,3,4] as s}
-          <div class="progress-step" class:done={wizardStep > s} class:active={wizardStep === s}>
-            <div class="step-dot">{wizardStep > s ? '✓' : s}</div>
-            <div class="step-label">
-              {s === 1 ? 'LOR importieren' : s === 2 ? 'GeoServer' : s === 3 ? 'Grunddaten' : 'OSM-Sync'}
-            </div>
-          </div>
-          {#if s < 4}<div class="progress-line" class:done={wizardStep > s}></div>{/if}
+  <!-- Stadt hinzufügen -->
+  <div class="add-card">
+    <form class="search-row" onsubmit={(e) => { e.preventDefault(); search(); }}>
+      <input type="text" bind:value={query} placeholder="Stadt suchen, z. B. Hamburg" />
+      <button class="btn-primary" type="submit" disabled={searching || !query.trim()}>
+        {searching ? 'Suche…' : 'Suchen'}
+      </button>
+    </form>
+    {#if results.length}
+      <ul class="results">
+        {#each results as r (r.osm_relation_id)}
+          {@const exists = cities.some((c) => c.osm_relation_id === r.osm_relation_id)}
+          <li>
+            <span><strong>{r.name}</strong> <small>{r.state ?? ''} · {r.type}</small></span>
+            {#if exists}
+              <span class="muted">bereits angelegt</span>
+            {:else}
+              <button class="btn-secondary" disabled={creatingId !== null} onclick={() => createCity(r)}>
+                {creatingId === r.osm_relation_id ? 'Lege an…' : 'Anlegen'}
+              </button>
+            {/if}
+          </li>
         {/each}
-      </div>
+      </ul>
+    {/if}
+    <p class="hint">Grenze, Stadtteile und alle Lokale werden automatisch aus OpenStreetMap übernommen. Der OSM-Abgleich läuft danach gestaffelt einmal täglich.</p>
+  </div>
 
-      {#if formError}
-        <div class="alert alert-error">{formError}</div>
-      {/if}
-
-      <!-- Step 1: LOR import + Name/Slug -->
-      {#if wizardStep === 1}
-        <div class="wizard-card">
-          <h2>Schritt 1 — Bezirksgrenzen (LOR) importieren</h2>
-
-          <div class="info-box info-important">
-            <strong>Pflichtschritt:</strong> Ohne Bezirksgrenzen funktioniert die Heatmap-Darstellung nicht.
-            Gib zuerst Name und Slug ein (wird für den GeoServer-SQL im nächsten Schritt benötigt),
-            dann importiere die LOR-Daten als Superuser in die Datenbank.
+  {#if loading}
+    <p class="loading">Lade…</p>
+  {:else}
+    <div class="cities-grid">
+      {#each cities as city (city.id)}
+        <div class="city-card" class:inactive={!city.is_active}>
+          <div class="city-header">
+            <div>
+              <strong>{city.name}</strong>
+              {#if city.state && city.state !== city.name}<span class="slug">{city.state}</span>{/if}
+            </div>
+            <span class="badge" class:badge-active={city.is_active} class:badge-inactive={!city.is_active}>
+              {city.is_active ? 'aktiv' : 'inaktiv'}
+            </span>
           </div>
 
-          <div class="form-grid">
-            <label>
-              Stadtname *
-              <input type="text" bind:value={form.name} oninput={onNameInput} placeholder="Hamburg" />
-            </label>
-            <label>
-              Slug (URL-Name) *
-              <input type="text" bind:value={form.slug} oninput={() => { form.wms_layer = `spritzmap:lor_index_${form.slug}`; }} placeholder="hamburg" />
-              <small>Kleinbuchstaben, Bindestriche — wird auto-generiert</small>
-            </label>
+          <div class="city-meta">
+            <div><span class="label">Lokale:</span> {city.location_count.toLocaleString('de-DE')} · davon mit Preis {city.priced_location_count}</div>
+            <div>
+              <span class="label">Gebiete:</span>
+              {city.area_count} ({AREA_SOURCE_LABEL[city.area_source]}{city.area_admin_level ? `, Ebene ${city.area_admin_level}` : ''})
+              {#if !city.area_count}<span class="warn">– keine Zusammenfassung auf der Karte</span>{/if}
+            </div>
+            <div>
+              <span class="label">OSM-Sync:</span>
+              {#if !city.osm_sync_enabled}
+                <span class="muted">deaktiviert</span>
+              {:else if city.last_sync_status === 'failed'}
+                <span class="sync-failed" title={city.last_sync_error ?? ''}>fehlgeschlagen ({city.sync_failures}×)</span>
+              {:else if city.last_sync_status === 'success'}
+                <span class="sync-ok">ok</span> {fmt(city.last_sync_at)}
+              {:else}
+                <span class="muted">ausstehend</span>
+              {/if}
+              {#if city.osm_sync_enabled}<small class="muted"> · nächster {fmt(city.next_sync_at)}</small>{/if}
+            </div>
+            {#if !city.has_boundary}
+              <div class="warn">Keine Stadtgrenze – Import über Bbox, Stadtteile nicht verfügbar</div>
+            {/if}
           </div>
 
-          <div class="steps-list">
-            <div class="step-item">
-              <div class="step-num">1</div>
-              <div>
-                <strong>Bezirksdaten beschaffen</strong><br>
-                Lade die Stadtteil-/Bezirksgrenzen als GeoJSON oder Shapefile herunter.
-                Gute Quellen:
-                <ul>
-                  <li><a href="https://overpass-turbo.eu/" target="_blank" rel="noopener">Overpass Turbo</a> (Query: <code>relation["boundary"="administrative"]["admin_level"="9"]["name"="{form.name || 'Stadtname'}"]</code>)</li>
-                  <li>Statistikamt / Open-Data-Portal der Stadt</li>
-                  <li><a href="https://www.openstreetmap.org/" target="_blank" rel="noopener">OpenStreetMap</a> → Gebietsexport</li>
-                </ul>
-              </div>
-            </div>
-
-            <div class="step-item">
-              <div class="step-num">2</div>
-              <div>
-                <strong>SQL in Coolify-DB-Konsole ausführen</strong><br>
-                Öffne im Coolify-Dashboard die PostgreSQL-Konsole und führe aus:
-                <pre class="code-block">{lorSqlSnippet()}</pre>
-                <small>Alternativ: <code>ogr2ogr</code> für Massenimport aus Shapefile/GeoJSON</small>
-              </div>
-            </div>
-
-            <div class="step-item">
-              <div class="step-num">3</div>
-              <div>
-                <strong>Koordinatensystem prüfen</strong><br>
-                Die gespeicherte Geometrie kann in beliebigem CRS vorliegen — die Queries verwenden
-                <code>ST_SRID(l.geom)</code> dynamisch.
-                Empfohlen: EPSG:4326 (WGS84, Standard bei GeoJSON) oder EPSG:25832 (UTM Zone 32N, für Hamburg/Westdeutschland).
-              </div>
-            </div>
+          <div class="city-actions">
+            <button class="btn-outline" onclick={() => openCity(city)}>{openId === city.id ? 'Schließen' : 'Verwalten'}</button>
+            <button class="btn-outline" onclick={() => toggle(city, 'is_active')}>{city.is_active ? 'Deaktivieren' : 'Aktivieren'}</button>
+            <button class="btn-outline" onclick={() => toggle(city, 'osm_sync_enabled')}>{city.osm_sync_enabled ? 'Sync aus' : 'Sync an'}</button>
           </div>
 
-          <div class="wizard-actions">
-            <button class="btn-outline" onclick={() => { showWizard = false; formError = ''; }}>Abbrechen</button>
-            <button class="btn-primary" onclick={advanceStep1}>
-              LOR importiert — weiter →
-            </button>
-          </div>
-        </div>
-
-      <!-- Step 2: GeoServer setup -->
-      {:else if wizardStep === 2}
-        <div class="wizard-card">
-          <h2>Schritt 2 — GeoServer-Layer einrichten</h2>
-
-          <div class="info-box">
-            Jede Stadt bekommt einen eigenen GeoServer-Layer. Nach dem Einrichten liest du die
-            Bounding Box der importierten LOR-Daten direkt aus GeoServer ab — diese Werte
-            übernimmst du dann bequem im nächsten Schritt.
-          </div>
-
-          <div class="steps-list">
-            <div class="step-item">
-              <div class="step-num">1</div>
-              <div>
-                <strong>GeoServer-Admin öffnen</strong><br>
-                <a href="{GEOSERVER_URL}/web/" target="_blank" rel="noopener">{GEOSERVER_URL}/web/</a>
-                → Daten → Layer hinzufügen → SQL View → Workspace <code>spritzmap</code>
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">2</div>
-              <div>
-                <strong>Layer-Name vergeben</strong><br>
-                Name des neuen Layers: <code>lor_index_{form.slug || 'CITY_SLUG'}</code><br>
-                <small>Vollständiger Layer-Name: <code>spritzmap:lor_index_{form.slug || 'CITY_SLUG'}</code></small>
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">3</div>
-              <div>
-                <strong>SQL-View einfügen</strong><br>
-                Kopiere den generierten SQL-Code und füge ihn als SQL-View ein.
-                <div class="code-header">
-                  <span>SQL für Layer <code>lor_index_{form.slug || 'CITY_SLUG'}</code></span>
-                  <button class="btn-copy" onclick={copyGeoserverSql}>
-                    {copied ? '✓ Kopiert!' : 'Kopieren'}
-                  </button>
+          {#if openId === city.id}
+            <div class="details">
+              <section>
+                <h3>OpenStreetMap</h3>
+                <div class="row">
+                  <button class="btn-secondary" disabled={!!busy} onclick={() => syncNow(city)}>{busy === 'sync' ? '…' : 'Jetzt synchronisieren'}</button>
+                  <button class="btn-outline" disabled={!!busy || !city.osm_relation_id} onclick={() => refreshBoundary(city)}>{busy === 'boundary' ? '…' : 'Grenze aktualisieren'}</button>
                 </div>
-                <pre class="code-block">{geoserverSqlSnippet()}</pre>
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">4</div>
-              <div>
-                <strong>Viewparam registrieren</strong><br>
-                Unter „SQL View Parameters" eintragen:<br>
-                Name: <code>drink_id</code> — Default: <code>1</code> — Validator: <code>^[\d]+$</code>
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">5</div>
-              <div>
-                <strong>Geometrie-Attribut konfigurieren</strong><br>
-                „Refresh" klicken → Geometry-Typ auf <code>MultiPolygon</code> setzen → SRID auf den SRID deiner LOR-Daten.
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">6</div>
-              <div>
-                <strong>Bounding Box aus GeoServer ablesen</strong><br>
-                Layer speichern → Layer-Liste → Layer anklicken → Tab <strong>„Publishing"</strong> → Abschnitt
-                <strong>„Bounding Boxes"</strong><br>
-                → <strong>„Compute from data"</strong> und <strong>„Compute from native bounds"</strong> klicken.<br>
-                Die <strong>Lat/Lon Bounding Box</strong> liefert die Koordinaten für den nächsten Schritt:
-                <div class="bbox-guide">
-                  <div class="bbox-row"><span class="bbox-key">Min X</span><span class="bbox-arrow">→</span><span class="bbox-val">min_lon (2. Wert im Bbox-Feld)</span></div>
-                  <div class="bbox-row"><span class="bbox-key">Min Y</span><span class="bbox-arrow">→</span><span class="bbox-val">min_lat (1. Wert im Bbox-Feld)</span></div>
-                  <div class="bbox-row"><span class="bbox-key">Max X</span><span class="bbox-arrow">→</span><span class="bbox-val">max_lon (4. Wert im Bbox-Feld)</span></div>
-                  <div class="bbox-row"><span class="bbox-key">Max Y</span><span class="bbox-arrow">→</span><span class="bbox-val">max_lat (3. Wert im Bbox-Feld)</span></div>
+                {#if runs.length}
+                  <table class="runs">
+                    <thead><tr><th>Start</th><th>Status</th><th>Neu</th><th>Aktual.</th><th>Deakt.</th></tr></thead>
+                    <tbody>
+                      {#each runs as r (r.id)}
+                        <tr title={r.error ?? r.server ?? ''}>
+                          <td>{fmt(r.started_at)}</td>
+                          <td class:sync-ok={r.status === 'success'} class:sync-failed={r.status === 'failed'}>{r.status}</td>
+                          <td>{r.created}</td><td>{r.updated}</td><td>{r.deactivated}</td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {/if}
+              </section>
+
+              <section>
+                <h3>Gebiete aus OSM</h3>
+                <div class="row">
+                  <button class="btn-outline" disabled={!!busy || !city.has_boundary} onclick={() => loadLevels(city)}>{busy === 'levels' ? 'Lade…' : 'Ebenen anzeigen'}</button>
                 </div>
-                Format für nächsten Schritt: <code>min_lat, min_lon, max_lat, max_lon</code>
-              </div>
-            </div>
-          </div>
-
-          <div class="wizard-actions">
-            <button class="btn-outline" onclick={() => { wizardStep = 1; }}>← Zurück</button>
-            <button class="btn-primary" onclick={() => { wizardStep = 3; }}>
-              GeoServer eingerichtet — weiter →
-            </button>
-          </div>
-        </div>
-
-      <!-- Step 3: Grunddaten (creates DB record) -->
-      {:else if wizardStep === 3}
-        <div class="wizard-card">
-          <h2>Schritt 3 — Grunddaten</h2>
-
-          {#if !step3Done}
-            <div class="info-box">
-              Trage jetzt die Koordinaten ein. Die Bbox-Werte hast du in Schritt 2 aus GeoServer abgelesen.
-              Klicke „Stadt anlegen" — danach wird der Datenbank-Eintrag erstellt und du siehst das SQL
-              zum Verknüpfen der LOR-Daten.
-            </div>
-
-            <div class="form-grid">
-              <label class="full">
-                Bbox * <small>(min_lat, min_lon, max_lat, max_lon — aus GeoServer Min Y, Min X, Max Y, Max X)</small>
-                <input type="text" bind:value={form.bbox} placeholder="53.3951,9.7319,53.9644,10.3252" />
-              </label>
-              <label>
-                Zentrum Breitengrad *
-                <input type="number" step="0.0001" bind:value={form.center_lat} placeholder="53.55" />
-              </label>
-              <label>
-                Zentrum Längengrad *
-                <input type="number" step="0.0001" bind:value={form.center_lon} placeholder="10.0" />
-              </label>
-              <label>
-                Standard-Zoom
-                <input type="number" min="8" max="18" bind:value={form.default_zoom} />
-                <small>12 ist ein guter Startwert für Großstädte</small>
-              </label>
-              <label>
-                WMS-Layer-Name
-                <input type="text" bind:value={form.wms_layer} placeholder={`spritzmap:lor_index_${form.slug || 'CITY_SLUG'}`} />
-                <small>Standard: <code>spritzmap:lor_index_{form.slug || 'CITY_SLUG'}</code></small>
-              </label>
-            </div>
-
-            <div class="wizard-actions">
-              <button class="btn-outline" onclick={() => { wizardStep = 2; }}>← Zurück</button>
-              <button class="btn-primary" disabled={saving} onclick={saveStep3}>
-                {saving ? 'Anlegen…' : 'Stadt anlegen →'}
-              </button>
-            </div>
-
-          {:else}
-            <div class="info-box" style="border-color: #16a34a; background: #f0fdf4; color: #166534;">
-              <strong>✓ Stadt angelegt!</strong> ID: {newCityId} — Verknüpfe jetzt die LOR-Daten mit der neuen Stadt:
-            </div>
-
-            <div class="steps-list">
-              <div class="step-item">
-                <div class="step-num">1</div>
-                <div>
-                  <strong>LOR-Daten verknüpfen</strong><br>
-                  Führe dieses SQL in der Coolify-DB-Konsole aus:
-                  <div class="code-header">
-                    <span>LOR → Stadt {form.name} verknüpfen</span>
-                    <button class="btn-copy" onclick={copyLorLinkSql}>
-                      {copiedLorLink ? '✓ Kopiert!' : 'Kopieren'}
+                {#if levels}
+                  {#if levels.length}
+                    {#each levels as l (l.admin_level)}
+                      <label class="level">
+                        <input type="radio" name="level-{city.id}" value={l.admin_level} bind:group={chosenLevel} />
+                        Ebene {l.admin_level}: {l.count} Gebiete, {Math.round(l.coverage * 100)} % Abdeckung
+                        {#if l.admin_level === recommended}<span class="rec">empfohlen</span>{/if}
+                      </label>
+                    {/each}
+                    <button class="btn-secondary" disabled={!!busy || chosenLevel === null} onclick={() => importOsmAreas(city)}>
+                      {busy === 'areas' ? 'Importiere…' : 'Übernehmen'}
                     </button>
-                  </div>
-                  <pre class="code-block">{lorLinkSnippet()}</pre>
-                  <small>Setzt alle LOR-Einträge ohne city_id auf die neue Stadt. Falls bereits andere Städte vorhanden sind, WHERE-Klausel anpassen.</small>
-                </div>
-              </div>
-            </div>
+                    <p class="hint">Nicht abgedeckte Teile der Stadt werden automatisch zu „übriges Stadtgebiet“ zusammengefasst.</p>
+                  {:else}
+                    <p class="muted">OSM hat für diese Stadt keine Stadtteile (Ebene 9/10). Gebiete bitte hochladen.</p>
+                  {/if}
+                {/if}
+              </section>
 
-            <div class="wizard-actions">
-              <button class="btn-primary" onclick={() => { wizardStep = 4; }}>
-                LOR verknüpft — weiter →
-              </button>
+              <section>
+                <h3>Offizielle Gebiete hochladen</h3>
+                <p class="hint">GeoJSON-FeatureCollection in WGS84 (EPSG:4326). Ersetzt alle Gebiete der Stadt und hat Vorrang vor OSM.</p>
+                <input type="file" accept=".geojson,.json,application/geo+json,application/json" onchange={onFileChosen} />
+                {#if uploadProps.length}
+                  <div class="row">
+                    <label>Schlüssel <select bind:value={keyProp}>{#each uploadProps as p}<option>{p}</option>{/each}</select></label>
+                    <label>Name <select bind:value={nameProp}>{#each uploadProps as p}<option>{p}</option>{/each}</select></label>
+                    <button class="btn-secondary" disabled={!!busy} onclick={() => uploadAreas(city)}>{busy === 'upload' ? 'Lade hoch…' : 'Hochladen'}</button>
+                  </div>
+                {/if}
+              </section>
             </div>
           {/if}
         </div>
-
-      <!-- Step 4: OSM Sync -->
-      {:else if wizardStep === 4}
-        <div class="wizard-card">
-          <h2>Schritt 4 — Bars & Restaurants aus OpenStreetMap importieren</h2>
-
-          <div class="info-box">
-            Der OSM-Sync lädt automatisch alle Bars, Restaurants, Cafés und Biergärten
-            aus dem angegebenen Bbox-Bereich. Das kann bei großen Städten 1–2 Minuten dauern.
-          </div>
-
-          <div class="steps-list">
-            <div class="step-item">
-              <div class="step-num">1</div>
-              <div>
-                <strong>Sync jetzt starten</strong><br>
-                Klicke auf „OSM-Sync starten" — der Import läuft im Hintergrund.
-                Der Wizard schließt sich, du siehst eine Statusmeldung auf der Seite.
-              </div>
-            </div>
-            <div class="step-item">
-              <div class="step-num">2</div>
-              <div>
-                <strong>Ergebnis prüfen</strong><br>
-                Nach dem Sync erscheinen die Locations auf der Karte (Stadtauswahl erforderlich).
-                Der automatische Sync läuft danach täglich.
-              </div>
-            </div>
-          </div>
-
-          <div class="wizard-actions">
-            <button class="btn-outline" onclick={() => { wizardStep = 3; }}>← Zurück</button>
-            <button class="btn-primary" onclick={startOsmSync}>
-              OSM-Sync starten & Fertigstellen ✓
-            </button>
-          </div>
-        </div>
-      {/if}
+      {/each}
     </div>
-  {/if}
-
-  <!-- ── City list ─────────────────────────────────────────────────────────── -->
-  {#if !showWizard}
-    {#if loading}
-      <div class="loading">Laden…</div>
-    {:else}
-      <div class="cities-grid">
-        {#each cities as city}
-          <div class="city-card" class:inactive={!city.is_active}>
-            <div class="city-header">
-              <div>
-                <strong>{city.name}</strong>
-                <span class="slug">/{city.slug}</span>
-              </div>
-              <span class="badge" class:badge-active={city.is_active} class:badge-inactive={!city.is_active}>
-                {city.is_active ? 'Aktiv' : 'Inaktiv'}
-              </span>
-            </div>
-
-            <div class="city-meta">
-              <div><span class="label">Bbox:</span> <code>{city.bbox}</code></div>
-              <div><span class="label">Zentrum:</span> {city.center_lat.toFixed(4)}, {city.center_lon.toFixed(4)}</div>
-              <div><span class="label">Zoom:</span> {city.default_zoom}</div>
-              <div><span class="label">WMS-Layer:</span> {city.wms_layer ?? '—'}</div>
-              <div><span class="label">OSM-Sync:</span> {city.osm_sync_enabled ? 'Ja' : 'Nein'}</div>
-            </div>
-
-            <div class="city-actions">
-              <button
-                class="btn-secondary"
-                disabled={syncingId === city.id}
-                onclick={() => triggerSync(city.id)}
-              >
-                {syncingId === city.id ? 'Syncing…' : '↻ OSM-Sync'}
-              </button>
-              <button class="btn-outline" onclick={() => toggleActive(city)}>
-                {city.is_active ? 'Deaktivieren' : 'Aktivieren'}
-              </button>
-            </div>
-          </div>
-        {/each}
-      </div>
-    {/if}
   {/if}
 </div>
 
@@ -582,271 +369,46 @@ CROSS JOIN drink_meta dm`;
     justify-content: space-between;
     margin-bottom: 1.5rem;
   }
-  .page-header h1 {
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin: 0;
-    color: #1a1a2e;
-  }
+  .page-header h1 { font-size: 1.5rem; font-weight: 700; margin: 0; color: #1a1a2e; }
 
-  .alert {
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    margin-bottom: 1rem;
-    font-size: 0.875rem;
-  }
+  .alert { padding: 0.75rem 1rem; border-radius: 8px; margin-bottom: 1rem; font-size: 0.875rem; }
   .alert-error { background: #fee2e2; color: #b91c1c; }
   .alert-info  { background: #dbeafe; color: #1d4ed8; }
-
   .loading { color: #888; padding: 2rem 0; text-align: center; }
 
-  /* ── Wizard ── */
-  .wizard { margin-bottom: 2rem; }
-
-  .wizard-progress {
-    display: flex;
-    align-items: center;
-    margin-bottom: 1.5rem;
-    gap: 0;
-  }
-
-  .progress-step {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .step-dot {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: #e5e7eb;
-    color: #6b7280;
-    font-size: 0.8rem;
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.2s, color 0.2s;
-  }
-
-  .progress-step.active .step-dot {
-    background: #e8500a;
-    color: white;
-  }
-
-  .progress-step.done .step-dot {
-    background: #16a34a;
-    color: white;
-  }
-
-  .step-label {
-    font-size: 0.7rem;
-    color: #6b7280;
-    white-space: nowrap;
-  }
-  .progress-step.active .step-label { color: #e8500a; font-weight: 600; }
-  .progress-step.done .step-label   { color: #16a34a; }
-
-  .progress-line {
-    flex: 1;
-    height: 2px;
-    background: #e5e7eb;
-    margin: 0 4px;
-    margin-bottom: 20px;
-    transition: background 0.2s;
-  }
-  .progress-line.done { background: #16a34a; }
-
-  .wizard-card {
+  .add-card {
     background: white;
     border-radius: 12px;
-    padding: 1.75rem;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+    padding: 1.25rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    margin-bottom: 1.5rem;
   }
-
-  .wizard-card h2 {
-    font-size: 1.1rem;
-    font-weight: 700;
-    margin: 0 0 1.25rem;
-    color: #1a1a2e;
-  }
-
-  .info-box {
-    background: #f0f9ff;
-    border-left: 3px solid #0ea5e9;
-    border-radius: 0 8px 8px 0;
-    padding: 0.75rem 1rem;
-    font-size: 0.85rem;
-    color: #0c4a6e;
-    margin-bottom: 1.25rem;
-    line-height: 1.5;
-  }
-
-  .info-important {
-    background: #fff7ed;
-    border-color: #f97316;
-    color: #7c2d12;
-  }
-
-  .code-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: 0.75rem;
-    margin-bottom: 0;
-    background: #2d3748;
-    border-radius: 6px 6px 0 0;
-    padding: 0.4rem 0.75rem;
-    font-size: 0.75rem;
-    color: #a0aec0;
-  }
-
-  .code-header code { color: #e2e8f0; }
-
-  .btn-copy {
-    padding: 2px 10px;
-    background: #4a5568;
-    color: #e2e8f0;
-    border: none;
-    border-radius: 4px;
-    font-size: 0.72rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
-    white-space: nowrap;
-  }
-  .btn-copy:hover { background: #718096; }
-
-  .code-header + .code-block {
-    border-radius: 0 0 6px 6px;
-    margin-top: 0;
-  }
-
-  .form-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-    margin-bottom: 1.25rem;
-  }
-
-  .form-grid label {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: #555;
-  }
-
-  .form-grid label.full { grid-column: 1 / -1; }
-
-  .form-grid input {
+  .search-row { display: flex; gap: 8px; }
+  .search-row input {
+    flex: 1;
     padding: 0.5rem 0.75rem;
     border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    font-family: inherit;
+    border-radius: 8px;
+    font-size: 0.9rem;
   }
-  .form-grid input:focus { outline: 2px solid #e8500a; border-color: transparent; }
-
-  .form-grid small { font-size: 0.72rem; color: #888; font-weight: 400; }
-
-  .steps-list {
+  .results { list-style: none; margin: 0.75rem 0 0; padding: 0; }
+  .results li {
     display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    margin-bottom: 1.25rem;
-  }
-
-  .step-item {
-    display: flex;
-    gap: 1rem;
-    align-items: flex-start;
-  }
-
-  .step-num {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: #1a1a2e;
-    color: white;
-    font-size: 0.75rem;
-    font-weight: 700;
-    display: flex;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    margin-top: 1px;
+    gap: 8px;
+    padding: 6px 0;
+    border-top: 1px solid #f0f0f0;
+    font-size: 0.9rem;
   }
+  .results small { color: #888; }
+  .hint { font-size: 0.78rem; color: #888; margin: 0.5rem 0 0; }
 
-  .step-item > div { font-size: 0.875rem; line-height: 1.6; color: #333; }
-  .step-item strong { display: block; margin-bottom: 2px; color: #1a1a2e; }
-
-  .step-item ul {
-    margin: 6px 0 0 1rem;
-    padding: 0;
-  }
-  .step-item li { margin-bottom: 2px; }
-  .step-item a { color: #e8500a; }
-
-  .code-block {
-    background: #1a1a2e;
-    color: #e2e8f0;
-    border-radius: 6px;
-    padding: 0.75rem 1rem;
-    font-size: 0.78rem;
-    font-family: 'Courier New', monospace;
-    margin: 0.5rem 0 0;
-    overflow-x: auto;
-    white-space: pre;
-  }
-
-  /* Bbox mapping guide */
-  .bbox-guide {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin: 0.6rem 0 0.4rem;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 6px;
-    padding: 0.6rem 0.75rem;
-  }
-
-  .bbox-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.8rem;
-  }
-
-  .bbox-key {
-    font-family: monospace;
-    font-weight: 700;
-    color: #1a1a2e;
-    min-width: 50px;
-  }
-
-  .bbox-arrow { color: #94a3b8; }
-
-  .bbox-val { color: #475569; }
-
-  .wizard-actions {
-    display: flex;
-    gap: 0.75rem;
-    justify-content: flex-end;
-    margin-top: 0.5rem;
-  }
-
-  /* ── City cards ── */
   .cities-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
     gap: 1rem;
   }
-
   .city-card {
     background: white;
     border-radius: 12px;
@@ -854,47 +416,33 @@ CROSS JOIN drink_meta dm`;
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
   }
   .city-card.inactive { opacity: 0.6; }
-
-  .city-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 1rem;
-  }
+  .city-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
   .city-header strong { font-size: 1rem; color: #1a1a2e; }
   .slug { font-size: 0.78rem; color: #888; margin-left: 4px; }
 
-  .badge {
-    font-size: 0.7rem;
-    font-weight: 700;
-    padding: 2px 8px;
-    border-radius: 12px;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
+  .badge { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 12px; text-transform: uppercase; white-space: nowrap; }
   .badge-active   { background: #dcfce7; color: #166534; }
   .badge-inactive { background: #f1f5f9; color: #64748b; }
 
-  .city-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    font-size: 0.8rem;
-    color: #555;
-    margin-bottom: 1rem;
-  }
+  .city-meta { display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; color: #555; margin-bottom: 1rem; }
   .city-meta .label { font-weight: 600; color: #333; margin-right: 4px; }
-  .city-meta code {
-    font-family: monospace;
-    font-size: 0.75rem;
-    background: #f5f5f5;
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
+  .muted { color: #999; }
+  .warn { color: #b26a00; }
+  .sync-ok { color: #166534; font-weight: 600; }
+  .sync-failed { color: #b91c1c; font-weight: 600; cursor: help; }
 
-  .city-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .city-actions, .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
-  /* ── Buttons ── */
+  .details { margin-top: 1rem; border-top: 1px solid #eee; padding-top: 0.75rem; display: flex; flex-direction: column; gap: 1rem; }
+  .details h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: #888; margin: 0 0 6px; }
+  .details label { font-size: 0.8rem; display: flex; align-items: center; gap: 4px; }
+  .level { margin: 4px 0; }
+  .rec { background: #dcfce7; color: #166534; font-size: 0.68rem; font-weight: 700; padding: 1px 6px; border-radius: 8px; }
+
+  .runs { width: 100%; border-collapse: collapse; font-size: 0.75rem; margin-top: 8px; }
+  .runs th, .runs td { text-align: left; padding: 3px 4px; border-bottom: 1px solid #f3f3f3; }
+  .runs th { color: #999; font-weight: 600; }
+
   .btn-primary {
     padding: 0.5rem 1.1rem;
     background: #e8500a;
@@ -904,11 +452,9 @@ CROSS JOIN drink_meta dm`;
     font-size: 0.875rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.15s;
   }
   .btn-primary:hover:not(:disabled) { background: #d04508; }
   .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-
   .btn-secondary {
     padding: 0.45rem 1rem;
     background: #1a1a2e;
@@ -918,11 +464,9 @@ CROSS JOIN drink_meta dm`;
     font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.15s;
   }
   .btn-secondary:hover:not(:disabled) { background: #2d2d4a; }
   .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
-
   .btn-outline {
     padding: 0.45rem 1rem;
     background: transparent;
@@ -932,13 +476,11 @@ CROSS JOIN drink_meta dm`;
     font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
   }
-  .btn-outline:hover { border-color: #999; color: #333; }
+  .btn-outline:hover:not(:disabled) { border-color: #999; color: #333; }
+  .btn-outline:disabled { opacity: 0.5; cursor: not-allowed; }
 
   @media (max-width: 640px) {
-    .form-grid { grid-template-columns: 1fr; }
-    .form-grid label.full { grid-column: 1; }
     .cities-grid { grid-template-columns: 1fr; }
   }
 </style>

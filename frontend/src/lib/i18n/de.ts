@@ -197,6 +197,7 @@ const de = {
     col_user: 'Nutzer',
     col_date: 'Datum',
     col_glass: 'Glas',
+    no_rights_city: 'Keine Moderationsrechte für diese Stadt',
     col_photos: 'Fotos',
     col_status: 'Status',
     filter_drink: 'Sorte',

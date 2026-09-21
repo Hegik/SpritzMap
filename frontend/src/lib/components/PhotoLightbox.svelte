@@ -1,6 +1,6 @@
 <script lang="ts">
   import { api, mediaUrl } from '$lib/api/client';
-  import { user, isModerator } from '$lib/stores/auth';
+  import { user, canModerate } from '$lib/stores/auth';
   import { t } from '$lib/i18n';
   import type { Photo } from '$lib/types/photo';
 
@@ -8,11 +8,13 @@
     open = $bindable(false),
     photos = $bindable<Photo[]>([]),
     index = $bindable(0),
+    cityId = null,
     ondeleted = () => {},
   }: {
     open: boolean;
     photos: Photo[];
     index: number;
+    cityId?: number | null;
     ondeleted?: () => void;
   } = $props();
 
@@ -20,7 +22,7 @@
   let error = $state('');
 
   const current = $derived(photos[index]);
-  const canDelete = $derived(!!current && ($isModerator || (current.user_id != null && current.user_id === $user?.id)));
+  const canDelete = $derived(!!current && ($canModerate(cityId) || (current.user_id != null && current.user_id === $user?.id)));
 
   function prev() { index = (index - 1 + photos.length) % photos.length; }
   function next() { index = (index + 1) % photos.length; }

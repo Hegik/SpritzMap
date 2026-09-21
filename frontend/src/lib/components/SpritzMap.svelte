@@ -35,11 +35,39 @@
   let lightboxPhotos = $state<Photo[]>([]);
   let lightboxIndex = $state(0);
   let mapZoom = $state(12);
+
+  // Stadtauswahl: Pills bei wenigen Städten, durchsuchbare Liste ab CITY_PILLS_MAX
+  const CITY_PILLS_MAX = 4;
+  let cityMenuOpen = $state(false);
+  let citySearch = $state('');
+  const filteredCities = $derived(
+    $cities.filter((c) => c.name.toLowerCase().includes(citySearch.trim().toLowerCase()))
+  );
+  let suppressCityFly = false;
+
+  function chooseCity(city: CityMeta) {
+    cityMenuOpen = false;
+    citySearch = '';
+    selectedCity.set(city);
+  }
+
+  /** Stadt am Standort vorwählen. fly=false: Karte bleibt beim Nutzer statt zum Stadtzentrum zu springen. */
+  async function selectCityAt(lat: number, lon: number, fly: boolean) {
+    const res = await fetch(`${API_URL}/cities/locate?lat=${lat}&lon=${lon}`).catch(() => null);
+    if (!res?.ok) return;
+    const { city_id } = await res.json();
+    const city = $cities.find((c) => c.id === city_id);
+    if (!city || city.id === $selectedCity?.id) return;
+    suppressCityFly = !fly;
+    selectedCity.set(city);
+  }
   let splashOpen = $state(false);
 
   // Oberhalb dieser Zoomstufe wird der LOR-WMS-Layer ausgeblendet und die Marker übernehmen
   const WMS_MAX_ZOOM = 15;
   const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
+  // Ein gemeinsamer Gebietslayer für alle Städte, gefiltert per viewparams city_id
+  const WMS_AREA_LAYER = import.meta.env.VITE_WMS_AREA_LAYER ?? 'spritzmap:area_summary';
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
   function getDrinkColor(drinkId: number | null): string {
@@ -215,23 +243,23 @@
     }
   }
 
-  function buildWmsUrl(drinkId: number | null, wmsLayer: string): string {
-    return `${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=${wmsLayer}&viewparams=drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`;
+  function buildWmsUrl(drinkId: number | null, cityId: number | null): string {
+    return `${GEOSERVER_URL}/wms?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&FORMAT=image/png&TRANSPARENT=true&LAYERS=${WMS_AREA_LAYER}&viewparams=city_id:${cityId ?? 0};drink_id:${drinkId ?? 1}&SRS=EPSG:3857&STYLES=&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256`;
   }
 
   function applyCity(city: CityMeta) {
-    // Fly to new city center
-    map.flyTo({ center: [city.center_lon, city.center_lat], zoom: city.default_zoom });
+    // Fly to new city center (nicht, wenn die Stadt über den eigenen Standort gewählt wurde)
+    if (!suppressCityFly) map.flyTo({ center: [city.center_lon, city.center_lat], zoom: city.default_zoom });
+    suppressCityFly = false;
 
-    // Update WMS tiles to this city's layer and show/hide accordingly
-    const hasWms = city.wms_layer != null;
+    // Gebietslayer auf die neue Stadt filtern; ohne Gebiete ausblenden
     if (map.getLayer('wms-lor')) {
-      map.setLayoutProperty('wms-lor', 'visibility', hasWms ? 'visible' : 'none');
+      map.setLayoutProperty('wms-lor', 'visibility', city.has_areas ? 'visible' : 'none');
     }
-    if (hasWms) {
+    if (city.has_areas) {
       const src = map.getSource('wms-lor') as any;
       if (src?.setTiles) {
-        src.setTiles([buildWmsUrl($selectedDrinkId, city.wms_layer!)]);
+        src.setTiles([buildWmsUrl($selectedDrinkId, city.id)]);
       }
     }
 
@@ -377,6 +405,7 @@
         updateUserLocation(pos);
         if (!didFly) {
           didFly = true;
+          selectCityAt(pos.coords.latitude, pos.coords.longitude, false);
           map?.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 17 });
         }
       },
@@ -474,7 +503,7 @@
     const centerLon = initialCity?.center_lon ?? 13.405;
     const centerLat = initialCity?.center_lat ?? 52.52;
     const zoom = initialCity?.default_zoom ?? 12;
-    const hasWms = initialCity?.wms_layer != null;
+    const hasWms = initialCity?.has_areas ?? false;
 
     map = new maplibre.Map({
       container: mapEl,
@@ -492,7 +521,7 @@
           },
           'wms-lor': {
             type: 'raster',
-            tiles: [buildWmsUrl($selectedDrinkId, initialCity?.wms_layer ?? 'spritzmap:lor_index_berlin')],
+            tiles: [buildWmsUrl($selectedDrinkId, initialCity?.id ?? null)],
             tileSize: 256,
           },
         },
@@ -548,6 +577,11 @@
       if (navigator.permissions) {
         navigator.permissions.query({ name: 'geolocation' }).then((result) => {
           if (result.state === 'granted') {
+            navigator.geolocation.getCurrentPosition(
+              (pos) => selectCityAt(pos.coords.latitude, pos.coords.longitude, true),
+              () => {},
+              { timeout: 10000, maximumAge: 300000 },
+            );
             watchId = navigator.geolocation.watchPosition(updateUserLocation, () => {});
           }
         });
@@ -556,9 +590,8 @@
       // Subscribe after map is ready — first call fires immediately with current value
       const updateWms = (drinkId: number | null) => {
         const src = map.getSource('wms-lor') as any;
-        const wmsLayer = $selectedCity?.wms_layer ?? 'spritzmap:lor_index_berlin';
         if (src?.setTiles) {
-          src.setTiles([buildWmsUrl(drinkId, wmsLayer)]);
+          src.setTiles([buildWmsUrl(drinkId, $selectedCity?.id ?? null)]);
         }
       };
 
@@ -614,7 +647,39 @@
 <div bind:this={mapEl} class="map-container"></div>
 
 <!-- City picker pills -->
-{#if $cities.length > 1}
+{#if $cities.length > CITY_PILLS_MAX}
+  <div class="city-picker">
+    <button class="city-btn active" onclick={() => (cityMenuOpen = !cityMenuOpen)} aria-expanded={cityMenuOpen}>
+      {$selectedCity?.name ?? 'Stadt wählen'} ▾
+    </button>
+    {#if cityMenuOpen}
+      <div class="city-menu">
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          type="text"
+          placeholder="Stadt suchen…"
+          bind:value={citySearch}
+          autofocus
+          onkeydown={(e) => {
+            if (e.key === 'Enter' && filteredCities[0]) chooseCity(filteredCities[0]);
+            if (e.key === 'Escape') cityMenuOpen = false;
+          }}
+        />
+        <ul>
+          {#each filteredCities as city (city.id)}
+            <li>
+              <button class:current={$selectedCity?.id === city.id} onclick={() => chooseCity(city)}>
+                {city.name}{#if city.state && city.state !== city.name}<small> {city.state}</small>{/if}
+              </button>
+            </li>
+          {:else}
+            <li class="none">Keine Stadt gefunden</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+  </div>
+{:else if $cities.length > 1}
   <div class="city-picker">
     {#each $cities as city}
       <button
@@ -656,10 +721,10 @@
   !
 </button>
 
-<MapLegend showUnpriced={$isLoggedIn} zoom={mapZoom} wmsMaxZoom={WMS_MAX_ZOOM} hasWms={$selectedCity?.wms_layer != null} drinkColor={getDrinkColor($selectedDrinkId)} />
+<MapLegend showUnpriced={$isLoggedIn} zoom={mapZoom} wmsMaxZoom={WMS_MAX_ZOOM} hasWms={$selectedCity?.has_areas ?? false} drinkColor={getDrinkColor($selectedDrinkId)} />
 
 <HelpModal bind:open={helpOpen} />
-<PhotoLightbox bind:open={lightboxOpen} bind:photos={lightboxPhotos} bind:index={lightboxIndex} />
+<PhotoLightbox bind:open={lightboxOpen} bind:photos={lightboxPhotos} bind:index={lightboxIndex} cityId={$selectedCity?.id ?? null} />
 <SplashModal bind:open={splashOpen} />
 
 <PriceSubmitModal
@@ -685,6 +750,40 @@
     display: flex;
     gap: 6px;
   }
+
+  .city-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(260px, 80vw);
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    padding: 8px;
+  }
+  .city-menu input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 6px 10px;
+    border: 1.5px solid #ddd;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
+  .city-menu ul { list-style: none; margin: 6px 0 0; padding: 0; max-height: 50vh; overflow-y: auto; }
+  .city-menu li button {
+    width: 100%;
+    text-align: left;
+    padding: 6px 8px;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  .city-menu li button:hover, .city-menu li button.current { background: #fff3ec; color: #b33c00; }
+  .city-menu li small { color: #999; margin-left: 4px; }
+  .city-menu .none { color: #999; font-size: 0.85rem; padding: 6px 8px; }
 
   .city-btn {
     padding: 5px 14px;

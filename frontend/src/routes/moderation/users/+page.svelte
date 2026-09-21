@@ -12,7 +12,10 @@
     role: 'user' | 'moderator' | 'admin';
     is_active: boolean;
     is_verified: boolean;
+    moderated_city_ids: number[];
   }
+
+  interface CityItem { id: number; name: string; state: string | null }
 
   // ── access guard ──────────────────────────────────────────────────────────
   onMount(async () => {
@@ -20,6 +23,7 @@
       goto('/moderation/dashboard');
       return;
     }
+    cities = await api.get<CityItem[]>('/admin/cities').catch(() => []);
     await load();
   });
 
@@ -93,6 +97,43 @@
     }
   }
 
+  // ── Städte-Zuweisung für Moderatoren ─────────────────────────────────────
+  let cities = $state<CityItem[]>([]);
+  let editingCitiesFor = $state<number | null>(null);
+  let cityDraft = $state<Set<number>>(new Set());
+  let citySearch = $state('');
+  const cityName = (id: number) => cities.find((c) => c.id === id)?.name ?? `#${id}`;
+  const filteredCities = $derived(
+    cities.filter((c) => c.name.toLowerCase().includes(citySearch.trim().toLowerCase()))
+  );
+
+  function editCities(u: ManagedUser) {
+    editingCitiesFor = u.id;
+    cityDraft = new Set(u.moderated_city_ids);
+    citySearch = '';
+  }
+
+  function toggleCity(id: number) {
+    const next = new Set(cityDraft);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    cityDraft = next;
+  }
+
+  async function saveCities() {
+    if (editingCitiesFor === null) return;
+    try {
+      const res = await api.put<{ moderated_city_ids: number[] }>(
+        `/admin/users/${editingCitiesFor}/cities`, { city_ids: [...cityDraft] },
+      );
+      const u = users.find((u) => u.id === editingCitiesFor);
+      if (u) u.moderated_city_ids = res.moderated_city_ids;
+      editingCitiesFor = null;
+    } catch (e) {
+      error = e instanceof Error ? e.message : $t.moderation.error_generic;
+    }
+  }
+
   const totalPages = $derived(Math.max(1, Math.ceil(total / limit)));
 
   const roleLabel: Record<string, string> = {
@@ -134,6 +175,7 @@
             <th>{$t.moderation.col_username}</th>
             <th>{$t.moderation.col_email}</th>
             <th>{$t.moderation.col_role}</th>
+            <th>Städte</th>
             <th>{$t.moderation.col_active}</th>
             <th>Verifiziert</th>
             <th>Aktionen</th>
@@ -161,6 +203,20 @@
                     <option value="moderator">Moderator</option>
                     <option value="admin">Admin</option>
                   </select>
+                {/if}
+              </td>
+              <td class="cities-cell">
+                {#if u.role === 'admin'}
+                  <span class="muted">alle</span>
+                {:else if u.role === 'moderator'}
+                  {#if u.moderated_city_ids.length}
+                    {#each u.moderated_city_ids as cid}<span class="city-chip">{cityName(cid)}</span>{/each}
+                  {:else}
+                    <span class="warn-text">keine – nur Lesen</span>
+                  {/if}
+                  <button class="btn-ghost-sm" onclick={() => editCities(u)}>Bearbeiten</button>
+                {:else}
+                  <span class="muted">–</span>
                 {/if}
               </td>
               <td>
@@ -201,6 +257,29 @@
     </div>
   {/if}
 </div>
+
+{#if editingCitiesFor !== null}
+  <div class="dialog-backdrop" role="presentation" onclick={() => (editingCitiesFor = null)}></div>
+  <div class="dialog city-dialog" role="dialog">
+    <p><strong>Städte für {users.find((u) => u.id === editingCitiesFor)?.username}</strong><br />
+      <small>Moderatoren lesen alle Städte, bearbeiten aber nur die ausgewählten.</small></p>
+    <input class="search-input" type="text" placeholder="Stadt suchen…" bind:value={citySearch} />
+    <div class="city-list">
+      {#each filteredCities as c (c.id)}
+        <label class="city-option">
+          <input type="checkbox" checked={cityDraft.has(c.id)} onchange={() => toggleCity(c.id)} />
+          {c.name}{#if c.state && c.state !== c.name}<small> · {c.state}</small>{/if}
+        </label>
+      {:else}
+        <p class="muted">Keine Stadt gefunden</p>
+      {/each}
+    </div>
+    <div class="dialog-actions">
+      <button class="btn-primary" onclick={saveCities}>Speichern ({cityDraft.size})</button>
+      <button class="btn-ghost" onclick={() => (editingCitiesFor = null)}>Abbrechen</button>
+    </div>
+  </div>
+{/if}
 
 {#if confirmDeleteUserId !== null}
   <div class="dialog-backdrop" role="presentation" onclick={() => confirmDeleteUserId = null}></div>
@@ -415,4 +494,27 @@
 
   .dialog p { margin: 0 0 1.25rem; font-size: 0.95rem; }
   .dialog-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
+  .cities-cell { max-width: 260px; }
+  .city-chip {
+    display: inline-block;
+    margin: 0 4px 4px 0;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: #fff3ec;
+    color: #b33c00;
+    font-size: 0.75rem;
+  }
+  .muted { color: #999; font-size: 0.8rem; }
+  .warn-text { color: #b26a00; font-size: 0.8rem; margin-right: 6px; }
+  .city-dialog { width: min(380px, 92vw); }
+  .city-list {
+    max-height: 280px;
+    overflow-y: auto;
+    margin: 8px 0;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 4px 8px;
+  }
+  .city-option { display: flex; align-items: center; gap: 6px; padding: 4px 0; font-size: 0.9rem; cursor: pointer; }
+  .city-option small { color: #999; }
 </style>

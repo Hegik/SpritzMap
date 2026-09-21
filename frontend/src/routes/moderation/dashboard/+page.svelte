@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '$lib/api/client';
+  import { user, canModerate } from '$lib/stores/auth';
 
   // ── types ─────────────────────────────────────────────────────────────────
   interface DayCount  { date: string; count: number }
@@ -8,8 +9,8 @@
   interface UsersStats   { registrations: DayCount[]; deletions: DayCount[]; base_count: number }
   interface EntriesStats { groups: GroupMeta[]; days: { date: string; counts: Record<string, number> }[] }
   interface DayPrice     { date: string; avg_price: number; min_price?: number; max_price?: number }
-  interface PricesStats  { berlin: DayPrice[]; lor: DayPrice[] }
-  interface LOR          { lor_schluessel: string; pr_name: string }
+  interface PricesStats  { total: DayPrice[]; area: DayPrice[] }
+  interface AreaItem     { id: number; key: string; name: string }
   interface DrinkMeta    { id: number; name: string; color_hex: string }
   interface DrinkTrendsStats { drinks: DrinkMeta[]; days: { date: string; prices: Record<string, number> }[] }
   interface HistogramBucket  { bucket_start: number; label: string; counts: Record<string, number> }
@@ -22,7 +23,7 @@
   interface PriceChange {
     entry_id: number; location_name: string; drink_name: string;
     new_price: number; prev_price: number; delta: number;
-    reported_at: string; username: string | null; user_id: number | null;
+    reported_at: string; username: string | null; user_id: number | null; city_id: number;
   }
 
   // ── filter state ──────────────────────────────────────────────────────────
@@ -52,12 +53,12 @@
   let heatmapRaw     = $state<HeatmapRow[] | null>(null);
   let locTypesData   = $state<LocationTypeItem[] | null>(null);
   // aux
-  let lors           = $state<LOR[]>([]);
+  let areas          = $state<AreaItem[]>([]);
   let drinks         = $state<DrinkMeta[]>([]);
   let changes        = $state<PriceChange[]>([]);
 
   // UI controls
-  let selLor           = $state('');
+  let selArea          = $state('');
   let selPriceDrink    = $state('');   // drink filter for avg-prices chart
   let selHistDrink     = $state('');   // drink filter for histogram
   let entriesGroupBy   = $state<'drink' | 'location_type'>('drink');
@@ -193,44 +194,45 @@
 
   // ── Chart 3 — Durchschnittspreise (+ Min/Max-Band wenn verfügbar) ─────────
   $effect(() => {
-    if (!apexLoaded || !el3 || !pricesData || !pricesData.berlin.length) return;
-    const { berlin, lor } = pricesData;
-    const lorName = lors.find(l => l.lor_schluessel === selLor)?.pr_name ?? 'LOR';
-    const hasBand = berlin[0]?.min_price != null;
+    if (!apexLoaded || !el3 || !pricesData || !pricesData.total.length) return;
+    const { total, area } = pricesData;
+    const areaName = areas.find(a => String(a.id) === selArea)?.name ?? 'Gebiet';
+    const totalName = cities.find(c => c.id === selCityId)?.name ?? 'alle Städte';
+    const hasBand = total[0]?.min_price != null;
 
     const series: any[] = [];
     if (hasBand) {
       series.push({
-        name: 'Preisspanne Berlin',
+        name: `Preisspanne ${totalName}`,
         type: 'rangeArea',
-        data: berlin.map(p => ({ x: ts(p.date), y: [+(p.min_price!).toFixed(2), +(p.max_price!).toFixed(2)] })),
+        data: total.map(p => ({ x: ts(p.date), y: [+(p.min_price!).toFixed(2), +(p.max_price!).toFixed(2)] })),
       });
     }
     series.push({
-      name: 'Ø Berlin',
+      name: `Ø ${totalName}`,
       type: 'line',
-      data: berlin.map(p => ({ x: ts(p.date), y: +p.avg_price.toFixed(2) })),
+      data: total.map(p => ({ x: ts(p.date), y: +p.avg_price.toFixed(2) })),
     });
-    if (selLor && lor.length) {
+    if (selArea && area.length) {
       if (hasBand) {
         series.push({
-          name: `Preisspanne ${lorName}`,
+          name: `Preisspanne ${areaName}`,
           type: 'rangeArea',
-          data: lor.map(p => ({ x: ts(p.date), y: [+(p.min_price!).toFixed(2), +(p.max_price!).toFixed(2)] })),
+          data: area.map(p => ({ x: ts(p.date), y: [+(p.min_price!).toFixed(2), +(p.max_price!).toFixed(2)] })),
         });
       }
       series.push({
-        name: `Ø ${lorName}`,
+        name: `Ø ${areaName}`,
         type: 'line',
-        data: lor.map(p => ({ x: ts(p.date), y: +p.avg_price.toFixed(2) })),
+        data: area.map(p => ({ x: ts(p.date), y: +p.avg_price.toFixed(2) })),
       });
     }
 
     const strokeWidths = series.map((s: any) => s.type === 'line' ? 2 : 0);
     const fillOpacities = series.map((s: any) => s.type === 'rangeArea' ? 0.15 : 1);
     const colors = hasBand
-      ? (selLor ? ['#ccc', '#777', '#f4b08c', '#e8500a'] : ['#ccc', '#555'])
-      : (selLor ? ['#777', '#e8500a'] : ['#555']);
+      ? (selArea ? ['#ccc', '#777', '#f4b08c', '#e8500a'] : ['#ccc', '#555'])
+      : (selArea ? ['#777', '#e8500a'] : ['#555']);
 
     const chart = new Apex(el3, {
       chart: baseChart({ type: 'rangeArea', height: 240 }),
@@ -484,7 +486,7 @@
 
   async function loadPrices(baseQ?: string) {
     const p = new URLSearchParams(baseQ ?? fParams());
-    if (selLor) p.set('lor_schluessel', selLor);
+    if (selArea && selCityId !== '') p.set('area_id', selArea);
     if (selPriceDrink) p.set('drink_id', selPriceDrink);
     pricesData = null; errP = ''; loadingP = true;
     try { pricesData = await api.get<PricesStats>(`/moderation/graph-prices?${p}`); }
@@ -521,20 +523,32 @@
   }
 
   async function loadEverything() {
-    await Promise.all([loadAll(), loadStaticCharts()]);
+    // Gebiete sind stadtspezifisch → bei Stadtwechsel neu laden und Auswahl zurücksetzen
+    if (!areas.length || areasCityId !== selCityId) {
+      areasCityId = selCityId;
+      selArea = '';
+      areas = selCityId !== '' ? await api.get<AreaItem[]>(`/moderation/areas?city_id=${selCityId}`).catch(() => []) : [];
+    }
+    await Promise.all([loadAll(), loadStaticCharts(), loadFeed()]);
   }
+
+  async function loadFeed() {
+    loadingC = true;
+    changes = await api.get<PriceChange[]>(`/moderation/price-feed?limit=20${selCityId !== '' ? `&city_id=${selCityId}` : ''}`).catch(() => []);
+    loadingC = false;
+  }
+  let areasCityId = $state<number | ''>('');
 
   onMount(async () => {
     const m = await import('apexcharts');
     Apex = m.default;
     apexLoaded = true;
 
-    lors = await api.get<LOR[]>('/moderation/lors').catch(() => []);
     drinks = await api.get<DrinkMeta[]>('/drinks/').catch(() => []);
     cities = await api.get<CityItem[]>('/cities/').catch(() => []);
-    loadingC = true;
-    changes = await api.get<PriceChange[]>('/moderation/price-feed?limit=20').catch(() => []);
-    loadingC = false;
+    // Moderatoren starten mit ihrer ersten eigenen Stadt
+    const own = $user?.moderated_city_ids;
+    if (own && own.length) selCityId = own[0];
 
     await loadEverything();
   });
@@ -669,15 +683,17 @@
             <option value="">Alle Sorten</option>
             {#each drinks as d}<option value={String(d.id)}>{d.name}</option>{/each}
           </select>
-          <select bind:value={selLor} onchange={() => loadPrices()} class="f-sel f-sel-sm">
-            <option value="">Berlin gesamt</option>
-            {#each lors as lor}<option value={lor.lor_schluessel}>{lor.pr_name}</option>{/each}
-          </select>
+          {#if areas.length}
+            <select bind:value={selArea} onchange={() => loadPrices()} class="f-sel f-sel-sm">
+              <option value="">{cities.find(c => c.id === selCityId)?.name ?? 'Stadt'} gesamt</option>
+              {#each areas as a}<option value={String(a.id)}>{a.name}</option>{/each}
+            </select>
+          {/if}
         </div>
       </div>
       {#if errP}<p class="cerr">{errP}</p>
       {:else if loadingP}<div class="chart-skeleton"></div>
-      {:else if !pricesData || !pricesData.berlin.length}<p class="cempty">Keine Daten</p>
+      {:else if !pricesData || !pricesData.total.length}<p class="cempty">Keine Daten</p>
       {:else}<div bind:this={el3}></div>{/if}
     </div>
 
@@ -768,7 +784,9 @@
               </button>
               {#if expandedId === c.entry_id}
                 <div class="feed-actions">
-                  <button class="btn-danger-sm" onclick={() => deleteEntry(c.entry_id)}>Eintrag löschen</button>
+                  {#if $canModerate(c.city_id)}
+                    <button class="btn-danger-sm" onclick={() => deleteEntry(c.entry_id)}>Eintrag löschen</button>
+                  {/if}
                   {#if c.user_id}
                     <button class="btn-warn-sm" onclick={() => suspendUser(c.user_id!)}>Nutzer sperren</button>
                   {/if}

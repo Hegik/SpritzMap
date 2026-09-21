@@ -3,6 +3,7 @@
   import { api, mediaUrl } from '$lib/api/client';
   import { t } from '$lib/i18n';
   import PhotoLightbox from '$lib/components/PhotoLightbox.svelte';
+  import { user } from '$lib/stores/auth';
   import type { GlassType, Photo } from '$lib/types/photo';
 
   interface Entry {
@@ -18,12 +19,15 @@
     glass_type: GlassType | null;
     ai_glass_type: GlassType | null;
     photos: Photo[];
+    city_id: number;
+    can_moderate: boolean;
   }
 
   const GLASS_TYPES: GlassType[] = ['wine', 'tumbler', 'other'];
   let lightboxOpen = $state(false);
   let lightboxPhotos = $state<Photo[]>([]);
   let lightboxIndex = $state(0);
+  let lightboxCityId = $state<number | null>(null);
 
   async function setGlassType(entry: Entry, value: string) {
     const next = (value || null) as GlassType | null;
@@ -98,6 +102,9 @@
     locationOptions = filterData.locations;
     usernameOptions = filterData.usernames;
     cities = citiesData;
+    // Moderatoren starten in ihrer ersten eigenen Stadt (lesen dürfen sie trotzdem alle)
+    const own = $user?.moderated_city_ids;
+    if (own && own.length) filterCityId = String(own[0]);
     await load();
   });
 
@@ -120,7 +127,7 @@
   // ── selection ─────────────────────────────────────────────────────────────
   function toggleAll(e: Event) {
     const checked = (e.target as HTMLInputElement).checked;
-    selected = checked ? new Set(entries.map((e) => e.id)) : new Set();
+    selected = checked ? new Set(editableEntries.map((e) => e.id)) : new Set();
   }
 
   function toggleOne(id: number) {
@@ -148,6 +155,9 @@
       error = e instanceof Error ? e.message : $t.moderation.error_generic;
     }
   }
+
+  // Nur Einträge aus eigenen Städten sind auswählbar/bearbeitbar
+  const editableEntries = $derived(entries.filter((e) => e.can_moderate));
 
   // ── pagination ────────────────────────────────────────────────────────────
   const totalPages = $derived(Math.max(1, Math.ceil(total / limit)));
@@ -235,8 +245,9 @@
             <th class="col-check">
               <input
                 type="checkbox"
-                checked={selected.size === entries.length}
-                indeterminate={selected.size > 0 && selected.size < entries.length}
+                checked={editableEntries.length > 0 && selected.size === editableEntries.length}
+                indeterminate={selected.size > 0 && selected.size < editableEntries.length}
+                disabled={editableEntries.length === 0}
                 onchange={toggleAll}
               />
             </th>
@@ -260,6 +271,8 @@
                   type="checkbox"
                   checked={selected.has(entry.id)}
                   onchange={() => toggleOne(entry.id)}
+                  disabled={!entry.can_moderate}
+                  title={entry.can_moderate ? '' : $t.moderation.no_rights_city}
                 />
               </td>
               <td>{entry.location_name}</td>
@@ -277,6 +290,7 @@
                   class="glass-select"
                   value={entry.glass_type ?? ''}
                   onchange={(e) => setGlassType(entry, e.currentTarget.value)}
+                  disabled={!entry.can_moderate}
                   title={entry.ai_glass_type ? `${$t.submit.ai_badge}: ${$t.glass[entry.ai_glass_type]}` : ''}
                 >
                   <option value="">–</option>
@@ -289,7 +303,7 @@
                 {#each entry.photos ?? [] as photo, i (photo.id)}
                   <button
                     class="thumb-btn"
-                    onclick={() => { lightboxPhotos = entry.photos; lightboxIndex = i; lightboxOpen = true; }}
+                    onclick={() => { lightboxPhotos = entry.photos; lightboxIndex = i; lightboxCityId = entry.city_id; lightboxOpen = true; }}
                   >
                     <img src={mediaUrl(photo.thumb_url)} alt={$t.photos.photo_alt} loading="lazy" />
                   </button>
@@ -297,7 +311,7 @@
               </td>
               <td class="note-cell">{entry.note ?? '–'}</td>
               <td>
-                {#if entry.is_current}
+                {#if entry.is_current && entry.can_moderate}
                   <button class="icon-btn" title="Löschen" onclick={() => askDelete(entry.id)}>🗑</button>
                 {/if}
               </td>
@@ -316,7 +330,7 @@
   {/if}
 </div>
 
-<PhotoLightbox bind:open={lightboxOpen} bind:photos={lightboxPhotos} bind:index={lightboxIndex} ondeleted={load} />
+<PhotoLightbox bind:open={lightboxOpen} bind:photos={lightboxPhotos} bind:index={lightboxIndex} cityId={lightboxCityId} ondeleted={load} />
 
 <!-- Confirm delete dialog -->
 {#if confirmDelete}
