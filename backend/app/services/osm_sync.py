@@ -14,7 +14,14 @@ from app.models.location import Location, LocationType
 
 logger = logging.getLogger(__name__)
 
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Hauptserver zuerst; bei Überlastung (429/5xx/Timeout) auf öffentliche Mirrors ausweichen
+OVERPASS_URLS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+]
+# Overpass lehnt generische Client-User-Agents (z. B. "python-httpx/…") mit 406 ab
+OVERPASS_HEADERS = {"User-Agent": "SpritzMap/1.0 (+https://spritzmap.hegik.de)"}
 
 OSM_AMENITY_TO_TYPE: dict[str, LocationType] = {
     "bar": LocationType.bar,
@@ -36,10 +43,22 @@ out center;
 
 async def fetch_osm_locations(bbox: str) -> list[dict]:
     query = OVERPASS_QUERY_TEMPLATE.format(bbox=bbox)
-    async with httpx.AsyncClient(timeout=90) as client:
-        response = await client.post(OVERPASS_URL, data={"data": query})
-        response.raise_for_status()
-        return response.json().get("elements", [])
+    last_error: Exception | None = None
+    async with httpx.AsyncClient(timeout=90, headers=OVERPASS_HEADERS) as client:
+        for url in OVERPASS_URLS:
+            try:
+                response = await client.post(url, data={"data": query})
+                response.raise_for_status()
+                return response.json().get("elements", [])
+            except httpx.HTTPStatusError as e:
+                # 4xx außer 429 = Fehler in unserer Anfrage → Mirror würde gleich antworten
+                if e.response.status_code < 500 and e.response.status_code != 429:
+                    raise
+                last_error = e
+            except httpx.TransportError as e:  # Timeout, Verbindungsfehler
+                last_error = e
+            logger.warning("Overpass %s nicht verfügbar (%s), versuche nächsten Server", url, last_error)
+    raise last_error or RuntimeError("No Overpass server configured")
 
 
 def _parse_location(element: dict) -> dict | None:

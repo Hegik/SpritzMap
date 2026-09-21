@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { buildIconHtml } from '$lib/utils/markerIcon';
+  import { buildIconHtml, buildNodataIconHtml } from '$lib/utils/markerIcon';
   import { t } from '$lib/i18n';
 
   let {
@@ -78,7 +78,7 @@
           {#each markers as m}
             <div class="row"><span class="icon">{@html m.html}</span>{m.label}</div>
           {/each}
-          <div class="row"><span class="icon">{@html buildIconHtml('#cccccc', 20, 28)}</span>{$t.legend.marker_nodata}</div>
+          <div class="row"><span class="icon">{@html buildNodataIconHtml(28)}</span>{$t.legend.marker_nodata}</div>
         </section>
       {/if}
 

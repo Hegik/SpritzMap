@@ -109,6 +109,13 @@ export async function getNodataGlassDataUrl(): Promise<string> {
   return getDataUrl('__nodata__', svgWithSize, 48);
 }
 
+// Same "no price yet" glass (blue question mark) as the map marker — synchronous HTML for the legend
+// (as <img> so the SVG's own <style> block with .st* classes stays isolated from the page)
+export function buildNodataIconHtml(sizePx: number): string {
+  const src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(spritzNodata)}`;
+  return `<img src="${src}" width="${sizePx}" height="${sizePx}" alt="" />`;
+}
+
 // Glass without drink layer + red cross — for "unavailable" entries
 export function buildUnavailableIconHtml(sizePx: number): string {
   const size = `width="${sizePx}" height="${sizePx}" style="position:absolute;top:0;left:0;"`;
