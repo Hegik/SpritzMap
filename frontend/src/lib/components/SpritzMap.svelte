@@ -207,6 +207,7 @@
         'icon-allow-overlap': true,
         'icon-anchor': 'bottom' as const,
         'text-field': ['get', 'priceTier'] as any,
+        'text-font': ['Open Sans Regular'],
         'text-size': 11,
         'text-anchor': 'top' as const,
         'text-offset': [0, 0.1] as any,
@@ -509,7 +510,9 @@
       container: mapEl,
       style: {
         version: 8,
-        glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+        // Selbst ausgeliefert (static/fonts), damit keine IP-Adressen an fremde Server gehen.
+        // Nur die Bereiche Latin-1 und U+2000–20FF (€) liegen vor – mehr zeigen die Marker nicht an.
+        glyphs: `${window.location.origin}/fonts/{fontstack}/{range}.pbf`,
         sources: {
           'basemap': {
             type: 'raster',
@@ -517,7 +520,7 @@
               'https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_grau/default/GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png'
             ],
             tileSize: 256,
-            attribution: '© GeoBasis-DE / BKG 2024 | © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>-Mitwirkende',
+            attribution: '© GeoBasis-DE / BKG 2024 | © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>-Mitwirkende | <a href="/impressum">Impressum</a> | <a href="/datenschutz">Datenschutz</a>',
           },
           'wms-lor': {
             type: 'raster',
