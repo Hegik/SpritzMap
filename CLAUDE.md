@@ -17,7 +17,7 @@ geoserver/  — kartoza/geoserver Docker image, reads from the same DB
 **Key data flow:**
 - Locations are synced from OSM (Overpass API) on startup + every 24h (`backend/app/services/osm_sync.py`)
 - `GET /locations/geojson` returns filtered GeoJSON for MapLibre GL markers
-- GeoServer publishes a WMS layer `spritzmap:lor_price_summary` — shown at zoom < 17, hidden at zoom ≥ 17
+- GeoServer publishes a WMS layer `spritzmap:lor_price_summary` — shown at zoom < 15, hidden at zoom ≥ 15 (`WMS_MAX_ZOOM` in `SpritzMap.svelte`)
 - The layer is parameterized via `viewparams=drink_id:X`; color and index are computed per-drink in SQL
 
 ## Development Commands
@@ -68,6 +68,11 @@ Services: frontend `:3000`, backend `:8000`, geoserver `:8080`, postgres `:5432`
 | `frontend/src/lib/utils/markerIcon.ts` | SVG wine glass icon generator (color + intensity) |
 | `frontend/src/lib/components/SpritzMap.svelte` | Main MapLibre GL map, marker loading, WMS layer |
 | `geoserver/README.md` | Step-by-step GeoServer LOR layer setup |
+| `backend/app/api/routes/photos.py` | Photo upload/list/delete (validation only, no re-encoding) |
+| `frontend/src/lib/utils/imageProcessing.ts` | Client-side resize → WebP + thumbnail, strips EXIF |
+| `frontend/src/lib/utils/colorAnalysis.ts` | AI step 1: color_value suggestion from photo pixels (calibration constants at top) |
+| `frontend/src/lib/utils/glassDetection.ts` | AI step 2: glass shape via COCO-SSD (TF.js, lazy-loaded) |
+| `frontend/src/lib/components/MapLegend.svelte` | Zoom-dependent map legend; tiers from `GET /config/price-tiers` |
 
 ## Price Tiers
 
@@ -85,6 +90,13 @@ Change `PRICE_TIER_1_MAX` / `PRICE_TIER_2_MAX` in `.env` to adjust without code 
 - `locations.geom` is a PostGIS `POINT` (SRID 4326)
 - Color intensity: `price_entries.color_value` is 0–255; the map uses the **average of the 50 most recent entries** per location+drink
 
+## Photos & AI analysis
+
+- All heavy lifting runs in the browser: compression (max 1600 px WebP, 400 px thumb) and AI suggestions. The backend only validates (Pillow `verify`, WebP/JPEG, ≤ 2000 px, ≤ 3 MB) and stores files.
+- Files live in `MEDIA_ROOT` (`/app/media`, persistent Coolify volume `spritzmap-media`) and are served under `/media/…` with immutable caching.
+- AI values are **suggestions only**: `color_value` / `glass_type` are what the user confirmed; `ai_color_value` / `ai_glass_type` keep the raw suggestion for accuracy tracking. `PATCH /prices/{id}/glass-type` corrects the glass later without touching timestamps.
+- COCO-SSD model is self-hosted in `frontend/static/models/coco-ssd/` (weights quantized to uint8, ~4.6 MB) — no requests to Google.
+
 ## Deployment (Coolify)
 
 Each service is a separate Coolify application backed by the shared PostgreSQL instance. Set env vars (`DATABASE_URL`, `SECRET_KEY`, `FRONTEND_URL`, `VITE_API_URL`, `VITE_GEOSERVER_URL`) in Coolify's environment panel. GeoServer uses the `kartoza/geoserver:2.25.0` Docker image.
@@ -98,5 +110,5 @@ Each service is a separate Coolify application backed by the shared PostgreSQL i
 
 ## Offene Aufgaben
 
-- [ ] Legende
+- [x] Legende
 - [ ] Gebietsauswertungen

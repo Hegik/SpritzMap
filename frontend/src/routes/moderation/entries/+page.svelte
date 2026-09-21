@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api } from '$lib/api/client';
+  import { api, mediaUrl } from '$lib/api/client';
   import { t } from '$lib/i18n';
+  import PhotoLightbox from '$lib/components/PhotoLightbox.svelte';
+  import type { GlassType, Photo } from '$lib/types/photo';
 
   interface Entry {
     id: number;
@@ -13,6 +15,25 @@
     reported_at: string;
     is_current: boolean;
     note: string | null;
+    glass_type: GlassType | null;
+    ai_glass_type: GlassType | null;
+    photos: Photo[];
+  }
+
+  const GLASS_TYPES: GlassType[] = ['wine', 'tumbler', 'other'];
+  let lightboxOpen = $state(false);
+  let lightboxPhotos = $state<Photo[]>([]);
+  let lightboxIndex = $state(0);
+
+  async function setGlassType(entry: Entry, value: string) {
+    const next = (value || null) as GlassType | null;
+    const previous = entry.glass_type;
+    entry.glass_type = next;
+    try {
+      await api.patch(`/prices/${entry.id}/glass-type`, { glass_type: next });
+    } catch {
+      entry.glass_type = previous;
+    }
   }
 
   interface Drink { id: number; name: string }
@@ -225,6 +246,8 @@
             <th>{$t.moderation.col_user}</th>
             <th>{$t.moderation.col_date}</th>
             <th>{$t.moderation.col_status}</th>
+            <th>{$t.moderation.col_glass}</th>
+            <th>{$t.moderation.col_photos}</th>
             <th>Notiz</th>
             <th></th>
           </tr>
@@ -249,6 +272,29 @@
                   {entry.is_current ? $t.moderation.status_current : $t.moderation.status_removed}
                 </span>
               </td>
+              <td>
+                <select
+                  class="glass-select"
+                  value={entry.glass_type ?? ''}
+                  onchange={(e) => setGlassType(entry, e.currentTarget.value)}
+                  title={entry.ai_glass_type ? `${$t.submit.ai_badge}: ${$t.glass[entry.ai_glass_type]}` : ''}
+                >
+                  <option value="">–</option>
+                  {#each GLASS_TYPES as g}
+                    <option value={g}>{$t.glass[g]}</option>
+                  {/each}
+                </select>
+              </td>
+              <td class="photo-cell">
+                {#each entry.photos ?? [] as photo, i (photo.id)}
+                  <button
+                    class="thumb-btn"
+                    onclick={() => { lightboxPhotos = entry.photos; lightboxIndex = i; lightboxOpen = true; }}
+                  >
+                    <img src={mediaUrl(photo.thumb_url)} alt={$t.photos.photo_alt} loading="lazy" />
+                  </button>
+                {:else}–{/each}
+              </td>
               <td class="note-cell">{entry.note ?? '–'}</td>
               <td>
                 {#if entry.is_current}
@@ -269,6 +315,8 @@
     </div>
   {/if}
 </div>
+
+<PhotoLightbox bind:open={lightboxOpen} bind:photos={lightboxPhotos} bind:index={lightboxIndex} ondeleted={load} />
 
 <!-- Confirm delete dialog -->
 {#if confirmDelete}
@@ -373,6 +421,10 @@
   tbody tr.removed { opacity: 0.5; }
 
   .col-check { width: 36px; }
+  .glass-select { font-size: 0.8rem; padding: 2px 4px; border: 1px solid #ddd; border-radius: 4px; background: white; }
+  .photo-cell { white-space: nowrap; }
+  .thumb-btn { padding: 0; margin-right: 3px; border: none; background: none; cursor: zoom-in; }
+  .thumb-btn img { width: 36px; height: 36px; object-fit: cover; border-radius: 3px; display: block; }
   .note-cell { color: #777; font-size: 0.82rem; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .badge {

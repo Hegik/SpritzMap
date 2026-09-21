@@ -5,7 +5,11 @@
   import PriceSubmitModal from '$lib/components/PriceSubmitModal.svelte';
   import HelpModal from '$lib/components/HelpModal.svelte';
   import SplashModal from '$lib/components/SplashModal.svelte';
-  import { isLoggedIn } from '$lib/stores/auth';
+  import PhotoLightbox from '$lib/components/PhotoLightbox.svelte';
+  import MapLegend from '$lib/components/MapLegend.svelte';
+  import { isLoggedIn, user } from '$lib/stores/auth';
+  import { api, mediaUrl } from '$lib/api/client';
+  import type { Photo } from '$lib/types/photo';
   import { t } from '$lib/i18n';
   import type { Map, Popup, GeoJSONSource } from 'maplibre-gl';
   import type { CityMeta } from '$lib/stores/map';
@@ -27,8 +31,14 @@
   let submitLocationName = $state('');
   let submitIsEmpty = $state(false);
   let helpOpen = $state(false);
+  let lightboxOpen = $state(false);
+  let lightboxPhotos = $state<Photo[]>([]);
+  let lightboxIndex = $state(0);
+  let mapZoom = $state(12);
   let splashOpen = $state(false);
 
+  // Oberhalb dieser Zoomstufe wird der LOR-WMS-Layer ausgeblendet und die Marker übernehmen
+  const WMS_MAX_ZOOM = 15;
   const GEOSERVER_URL = import.meta.env.VITE_GEOSERVER_URL ?? 'http://localhost:8080/geoserver';
   const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -249,6 +259,42 @@
     return `<div class="popup-intensity"><div class="popup-intensity-title">Aperol-Anteil</div><div class="popup-intensity-track" style="background:${colorHex}20;"><div class="popup-intensity-dot" style="left:${leftPct.toFixed(1)}%;background:${colorHex};"></div></div><div class="popup-intensity-label">${label}</div></div>`;
   }
 
+  function escapeHtml(value: unknown): string {
+    return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  }
+
+  function buildPhotoStripHtml(photos: Photo[]): string {
+    if (!photos.length) return '';
+    const thumbs = photos
+      .map((p, i) => `<img class="popup-photo" data-idx="${i}" src="${escapeHtml(mediaUrl(p.thumb_url))}" alt="${escapeHtml($t.photos.photo_alt)}" loading="lazy" />`)
+      .join('');
+    return `<div class="popup-photos">${thumbs}</div>`;
+  }
+
+  function buildConfirmHtml(props: Record<string, any>): string {
+    let html = '';
+    if (props.last_confirmed_at && props.last_confirmed_at !== props.reported_at) {
+      html += `<div class="popup-meta">${escapeHtml($t.map.popup_confirmed_at(props.last_confirmed_at))}</div>`;
+    }
+    const isOwn = $user != null && props.entry_user_id === $user.id;
+    if ($isLoggedIn && props.entry_id && !isOwn) {
+      html += `<button class="popup-confirm" data-entry-id="${escapeHtml(props.entry_id)}">${escapeHtml($t.map.btn_confirm)}</button>`;
+    }
+    return html;
+  }
+
+  async function confirmPrice(btn: HTMLButtonElement) {
+    btn.disabled = true;
+    try {
+      await api.post(`/prices/${btn.dataset.entryId}/confirm`, {});
+      btn.textContent = $t.map.confirm_done;
+      btn.classList.add('done');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : '';
+      btn.textContent = msg.startsWith('409') ? $t.map.confirm_already : $t.map.confirm_error;
+    }
+  }
+
   async function updateUserLocation(pos: GeolocationPosition) {
     if (!map) return;
     const { longitude, latitude } = pos.coords;
@@ -344,10 +390,14 @@
     const coords = feature.geometry.coordinates.slice();
     const address = props.address?.trim().replace(/^,|,$/g, '').trim();
 
-    // Fetch all prices for this location in parallel with popup render prep
-    const pricesRes = await fetch(`${API_URL}/locations/${props.id}/prices`).catch(() => null);
+    // Fetch all prices + photos for this location in parallel
+    const [pricesRes, photosRes] = await Promise.all([
+      fetch(`${API_URL}/locations/${props.id}/prices`).catch(() => null),
+      fetch(`${API_URL}/locations/${props.id}/photos`).catch(() => null),
+    ]);
     const allPrices: { drink_id: number; drink_name: string; price: number }[] =
       pricesRes?.ok ? await pricesRes.json() : [];
+    const photos: Photo[] = photosRes?.ok ? await photosRes.json() : [];
 
     let html = `<strong>${props.name}</strong><br>`;
     if (address) html += `<small>${address}</small><br>`;
@@ -358,11 +408,14 @@
       html += buildIntensityBarHtml(props.avg_color_value, props.drink_color_hex);
       html += `${props.drink_name} — <b>${Number(props.price).toFixed(2)} €</b>`;
       html += buildOtherDrinksHtml(allPrices, props.drink_id);
+      html += buildPhotoStripHtml(photos);
       html += `<div class="popup-meta">${$t.map.popup_reported_by(props.reported_by, props.reported_at)}</div>`;
+      html += buildConfirmHtml(props);
       if ($isLoggedIn) html += `<button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">${$t.map.btn_add_spritz}</button>`;
     } else if (props.popup_type === 'nodata') {
       html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price_for_drink}</em>`;
       html += buildOtherDrinksHtml(allPrices, null);
+      html += buildPhotoStripHtml(photos);
       if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="${allPrices.length === 0}">${$t.map.btn_add_spritz}</button>`;
     } else {
       html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price}</em>`;
@@ -372,9 +425,20 @@
 
     popup.setLngLat(coords).setHTML(html).addTo(map);
 
-    // Wire up button after popup DOM is created
+    // Wire up buttons after popup DOM is created
     setTimeout(() => {
-      const btn = document.querySelector('.popup-btn') as HTMLButtonElement | null;
+      const root = popup.getElement();
+      root?.querySelectorAll<HTMLImageElement>('.popup-photo').forEach((img) => {
+        img.addEventListener('click', () => {
+          lightboxPhotos = photos;
+          lightboxIndex = Number(img.dataset.idx);
+          lightboxOpen = true;
+        });
+      });
+      const confirmBtn = root?.querySelector('.popup-confirm') as HTMLButtonElement | null;
+      confirmBtn?.addEventListener('click', () => confirmPrice(confirmBtn));
+
+      const btn = root?.querySelector('.popup-btn') as HTMLButtonElement | null;
       btn?.addEventListener('click', () => {
         submitLocationId = Number(btn.dataset.id);
         submitLocationName = btn.dataset.name ?? '';
@@ -437,7 +501,7 @@
             source: 'wms-lor',
             paint: { 'raster-opacity': 1 },
             minzoom: 0,
-            maxzoom: 15,
+            maxzoom: WMS_MAX_ZOOM,
             layout: { visibility: hasWms ? 'visible' : 'none' },
           },
         ],
@@ -447,6 +511,9 @@
     });
 
     popup = new maplibre.Popup({ closeButton: true, maxWidth: '280px' });
+
+    mapZoom = map.getZoom();
+    map.on('zoom', () => { mapZoom = map.getZoom(); });
 
     map.on('load', async () => {
       for (const layer of ['markers-priced', 'markers-nodata']) {
@@ -578,7 +645,10 @@
   !
 </button>
 
+<MapLegend zoom={mapZoom} wmsMaxZoom={WMS_MAX_ZOOM} hasWms={$selectedCity?.wms_layer != null} drinkColor={getDrinkColor($selectedDrinkId)} />
+
 <HelpModal bind:open={helpOpen} />
+<PhotoLightbox bind:open={lightboxOpen} bind:photos={lightboxPhotos} bind:index={lightboxIndex} />
 <SplashModal bind:open={splashOpen} />
 
 <PriceSubmitModal
@@ -725,6 +795,38 @@
     cursor: pointer;
     width: 100%;
   }
+
+  :global(.popup-photos) {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+    overflow-x: auto;
+  }
+
+  :global(.popup-photo) {
+    width: 56px;
+    height: 56px;
+    object-fit: cover;
+    border-radius: 4px;
+    cursor: zoom-in;
+    flex-shrink: 0;
+  }
+
+  :global(.popup-confirm) {
+    margin-top: 6px;
+    padding: 4px 10px;
+    background: white;
+    color: #2e7d32;
+    border: 1.5px solid #66bb6a;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+  }
+
+  :global(.popup-confirm.done) { background: #e8f5e9; }
+  :global(.popup-confirm:disabled) { cursor: default; }
 
   :global(.popup-meta) {
     margin-top: 8px;

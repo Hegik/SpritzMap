@@ -22,6 +22,8 @@
 	},
 	"dependencies": {
 		"@sveltejs/adapter-node": "^5.5.4",
+		"@tensorflow-models/coco-ssd": "^2.2.3",
+		"@tensorflow/tfjs": "^4.22.0",
 		"apexcharts": "^5.10.6",
 		"maplibre-gl": "^5.23.0",
 		"marked": "^18.0.0"

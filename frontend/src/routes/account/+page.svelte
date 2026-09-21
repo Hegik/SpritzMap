@@ -2,7 +2,9 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { authStore, isLoggedIn, user } from '$lib/stores/auth';
-  import { api } from '$lib/api/client';
+  import { api, mediaUrl } from '$lib/api/client';
+  import PhotoLightbox from '$lib/components/PhotoLightbox.svelte';
+  import type { GlassType, Photo } from '$lib/types/photo';
   import { t } from '$lib/i18n';
   import AppHeader from '$lib/components/AppHeader.svelte';
   import { buildIconHtml, buildUnavailableIconHtml } from '$lib/utils/markerIcon';
@@ -46,6 +48,26 @@
     note: string | null;
     unavailable: boolean;
     is_current: boolean;
+    glass_type: GlassType | null;
+    ai_glass_type: GlassType | null;
+    photos: Photo[];
+  }
+
+  const GLASS_TYPES: GlassType[] = ['wine', 'tumbler', 'other'];
+  let lightboxOpen = $state(false);
+  let lightboxPhotos = $state<Photo[]>([]);
+  let lightboxIndex = $state(0);
+
+  // Glasform nachträglich korrigieren – ändert keine Zeitstempel, ist keine neue Preismeldung
+  async function setGlassType(entry: EntryItem, glass: GlassType) {
+    const next = entry.glass_type === glass ? null : glass;
+    const previous = entry.glass_type;
+    entry.glass_type = next;
+    try {
+      await api.patch(`/prices/${entry.id}/glass-type`, { glass_type: next });
+    } catch {
+      entry.glass_type = previous;
+    }
   }
 
   let entries = $state<EntryItem[]>([]);
@@ -289,6 +311,32 @@
                     {#if entry.price_tier}<span class="entry-tier">{entry.price_tier}</span>{/if}
                   </span>
                 {/if}
+                {#if !entry.unavailable}
+                  <div class="entry-glass">
+                    {#each GLASS_TYPES as g}
+                      <button
+                        class="glass-chip"
+                        class:active={entry.glass_type === g}
+                        onclick={() => setGlassType(entry, g)}
+                      >{$t.glass[g]}</button>
+                    {/each}
+                    {#if entry.ai_glass_type && entry.glass_type === entry.ai_glass_type}
+                      <span class="ai-badge">{$t.submit.ai_badge}</span>
+                    {/if}
+                  </div>
+                {/if}
+                {#if entry.photos?.length}
+                  <div class="entry-photos">
+                    {#each entry.photos as photo, i (photo.id)}
+                      <button
+                        class="entry-photo"
+                        onclick={() => { lightboxPhotos = entry.photos; lightboxIndex = i; lightboxOpen = true; }}
+                      >
+                        <img src={mediaUrl(photo.thumb_url)} alt={$t.photos.photo_alt} loading="lazy" />
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
                 {#if entry.note}
                   <span class="entry-note">„{entry.note}"</span>
                 {/if}
@@ -368,6 +416,13 @@
 {/if}
 
 <!-- ── Bestätigungsdialog ── -->
+<PhotoLightbox
+  bind:open={lightboxOpen}
+  bind:photos={lightboxPhotos}
+  bind:index={lightboxIndex}
+  ondeleted={() => loadEntries(entriesPage)}
+/>
+
 {#if showDeleteConfirm}
   <div
     class="overlay"
@@ -668,6 +723,52 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .entry-glass {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-top: 4px;
+  }
+
+  .glass-chip {
+    padding: 2px 8px;
+    border: 1px solid #ddd;
+    border-radius: 999px;
+    background: white;
+    font-size: 0.72rem;
+    color: #666;
+    cursor: pointer;
+  }
+
+  .glass-chip.active { border-color: #e8500a; background: #fff3ec; color: #b33c00; font-weight: 600; }
+
+  .ai-badge {
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: #eef2ff;
+    color: #4150a8;
+    font-size: 0.65rem;
+    font-weight: 600;
+  }
+
+  .entry-photos { display: flex; gap: 4px; margin-top: 4px; }
+
+  .entry-photo {
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: zoom-in;
+  }
+
+  .entry-photo img {
+    width: 44px;
+    height: 44px;
+    object-fit: cover;
+    border-radius: 4px;
+    display: block;
   }
 
   .entry-date {

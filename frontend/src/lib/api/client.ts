@@ -1,9 +1,13 @@
-const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+export const BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+
+/** Absolute URL für vom Backend gelieferte Medienpfade (z. B. "/media/12/abc.webp"). */
+export const mediaUrl = (path: string) => `${BASE_URL}${path}`;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('token');
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    // Bei FormData setzt der Browser Content-Type inkl. Boundary selbst
+    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers as Record<string, string>),
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -28,6 +32,8 @@ export const api = {
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   deleteWithBody: <T>(path: string, body: unknown) =>
     request<T>(path, { method: 'DELETE', body: JSON.stringify(body) }),
+  upload: <T>(path: string, form: FormData) =>
+    request<T>(path, { method: 'POST', body: form }),
 
   // OAuth2 form-encoded login
   async login(email: string, password: string): Promise<{ access_token: string }> {

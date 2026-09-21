@@ -3,6 +3,10 @@
   import { api } from '$lib/api/client';
   import { buildIconHtml } from '$lib/utils/markerIcon';
   import { t } from '$lib/i18n';
+  import { compressImage, fileExtension, type CompressedImage } from '$lib/utils/imageProcessing';
+  import { estimateColorValue, type Region } from '$lib/utils/colorAnalysis';
+  import { detectGlass } from '$lib/utils/glassDetection';
+  import type { GlassType } from '$lib/types/photo';
 
   let {
     open = $bindable(false),
@@ -25,6 +29,88 @@
   let error = $state('');
   let success = $state(false);
   let loading = $state(false);
+
+  // Foto + KI-Vorschläge (alles im Browser berechnet)
+  const GLASS_TYPES: GlassType[] = ['wine', 'tumbler', 'other'];
+  let photo = $state<CompressedImage | null>(null);
+  let photoPreviewUrl = $state<string | null>(null);
+  let analyzing = $state(false);
+  let photoWarning = $state('');
+  let glassType = $state<GlassType | null>(null);
+  let aiGlassType = $state<GlassType | null>(null);
+  let aiColorValue = $state<number | null>(null);
+  let aiRegion: Region | undefined;
+  let colorTouched = $state(false);
+
+  function resetPhoto() {
+    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    photo?.bitmap.close();
+    photo = null;
+    photoPreviewUrl = null;
+    analyzing = false;
+    photoWarning = '';
+    glassType = null;
+    aiGlassType = null;
+    aiColorValue = null;
+    aiRegion = undefined;
+    colorTouched = false;
+  }
+
+  $effect(() => {
+    if (!open) {
+      resetPhoto();
+      price = '';
+      note = '';
+      colorValue = 128;
+      error = '';
+    }
+  });
+
+  async function onPhotoSelected(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    resetPhoto();
+    analyzing = true;
+    try {
+      photo = await compressImage(file);
+      photoPreviewUrl = URL.createObjectURL(photo.thumb);
+    } catch {
+      analyzing = false;
+      photoWarning = $t.submit.photo_error_read;
+      return;
+    }
+
+    // Stufe 2 (Glasform) liefert den Messbereich für Stufe 1 (Farbwert); schlägt sie fehl, Bildmitte nutzen
+    try {
+      const glass = await detectGlass(photo.bitmap);
+      if (glass) {
+        aiGlassType = glass.glassType;
+        glassType = glass.glassType;
+        aiRegion = glass.region;
+      }
+    } catch (err) {
+      console.warn('[SpritzMap] Glaserkennung fehlgeschlagen', err);
+    }
+    analyzing = false;
+    applyColorSuggestion();
+  }
+
+  function applyColorSuggestion() {
+    if (!photo) return;
+    aiColorValue = estimateColorValue(photo.bitmap, selectedDrinkColor, aiRegion);
+    if (aiColorValue !== null && !colorTouched) colorValue = aiColorValue;
+  }
+
+  // Sorte gewechselt → Farbvorschlag mit dem neuen Farbton neu berechnen
+  let lastDrinkColor = '';
+  $effect(() => {
+    const c = selectedDrinkColor;
+    if (c === lastDrinkColor) return;
+    lastDrinkColor = c;
+    if (photo && !analyzing) applyColorSuggestion();
+  });
 
   async function markUnavailable() {
     if (!locationId || !drinkId) return;
@@ -68,18 +154,37 @@
 
   async function submit() {
     error = '';
+    photoWarning = '';
     loading = true;
     try {
-      await api.post('/prices/', {
+      const entry = await api.post<{ id: number }>('/prices/', {
         location_id: locationId,
         drink_id: drinkId,
         price: parseFloat(price),
         color_value: colorValue,
         note: note || null,
+        glass_type: glassType,
+        ai_color_value: aiColorValue,
+        ai_glass_type: aiGlassType,
       });
+
+      // Preis ist gespeichert – ein fehlgeschlagener Foto-Upload macht ihn nicht ungültig
+      if (photo && locationId) {
+        try {
+          const form = new FormData();
+          form.append('location_id', String(locationId));
+          form.append('price_entry_id', String(entry.id));
+          form.append('file', photo.full, `photo.${fileExtension(photo.full)}`);
+          form.append('thumb', photo.thumb, `thumb.${fileExtension(photo.thumb)}`);
+          await api.upload('/photos', form);
+        } catch {
+          photoWarning = $t.submit.photo_error_upload;
+        }
+      }
+
       success = true;
       onsubmitted();
-      setTimeout(() => { open = false; success = false; }, 1500);
+      setTimeout(() => { open = false; success = false; }, photoWarning ? 3500 : 1500);
     } catch (e: unknown) {
       error = e instanceof Error ? e.message : $t.submit.error_save;
     } finally {
@@ -108,6 +213,7 @@
 
       {#if success}
         <p class="success">{$t.submit.success}</p>
+        {#if photoWarning}<p class="warning">{photoWarning}</p>{/if}
       {:else}
         <form onsubmit={(e) => { e.preventDefault(); submit(); }}>
           <label>
@@ -132,18 +238,60 @@
             />
           </label>
 
+          <div class="photo-field">
+            <span class="field-label">{$t.submit.label_photo}</span>
+            <div class="photo-row">
+              {#if photoPreviewUrl}
+                <img class="photo-preview" src={photoPreviewUrl} alt={$t.submit.photo_preview_alt} />
+              {/if}
+              <label class="photo-btn">
+                {photoPreviewUrl ? $t.submit.btn_photo_change : $t.submit.btn_photo_add}
+                <input type="file" accept="image/*" capture="environment" onchange={onPhotoSelected} hidden />
+              </label>
+              {#if photoPreviewUrl && !analyzing}
+                <button type="button" class="photo-remove" onclick={resetPhoto}>{$t.submit.btn_photo_remove}</button>
+              {/if}
+            </div>
+            {#if analyzing}
+              <p class="hint">{$t.submit.analyzing}</p>
+            {:else if photo && aiColorValue === null && aiGlassType === null}
+              <p class="hint">{$t.submit.ai_nothing_found}</p>
+            {/if}
+            {#if photoWarning && !success}<p class="warning">{photoWarning}</p>{/if}
+          </div>
+
           <div class="preview-wrapper">
             {@html previewHtml}
           </div>
 
           <label>
-            {$t.submit.label_intensity} ({colorValue})
+            <span>
+              {$t.submit.label_intensity} ({colorValue})
+              {#if aiColorValue !== null && !colorTouched}<span class="ai-badge">{$t.submit.ai_badge}</span>{/if}
+            </span>
             <div class="color-slider-wrapper">
               <span style="opacity: 0.2; color: {selectedDrinkColor}">●</span>
-              <input type="range" bind:value={colorValue} min={0} max={255} />
+              <input type="range" bind:value={colorValue} min={0} max={255} oninput={() => (colorTouched = true)} />
               <span style="color: {selectedDrinkColor}">●</span>
             </div>
           </label>
+
+          <div class="glass-field">
+            <span class="field-label">
+              {$t.submit.label_glass}
+              {#if aiGlassType !== null && glassType === aiGlassType}<span class="ai-badge">{$t.submit.ai_badge}</span>{/if}
+            </span>
+            <div class="chips">
+              {#each GLASS_TYPES as g}
+                <button
+                  type="button"
+                  class="chip"
+                  class:active={glassType === g}
+                  onclick={() => (glassType = glassType === g ? null : g)}
+                >{$t.glass[g]}</button>
+              {/each}
+            </div>
+          </div>
 
           <label>
             {$t.submit.label_note}
@@ -191,6 +339,8 @@
     border-radius: 12px;
     padding: 2rem;
     width: min(380px, 92vw);
+    max-height: 92dvh;
+    overflow-y: auto;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
   }
 
@@ -240,6 +390,47 @@
   button[type='submit']:disabled { opacity: 0.6; }
   .error { color: #c00; font-size: 0.875rem; margin: 0; }
   .success { color: green; font-weight: 600; text-align: center; padding: 1rem; }
+
+  .warning { color: #b26a00; font-size: 0.85rem; margin: 0; text-align: center; }
+  .hint { color: #888; font-size: 0.8rem; margin: 0; }
+  .field-label { font-size: 0.875rem; font-weight: 500; }
+
+  .photo-field, .glass-field { display: flex; flex-direction: column; gap: 6px; }
+  .photo-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .photo-preview { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; border: 1px solid #ddd; }
+  .photo-btn {
+    display: inline-block;
+    padding: 6px 12px;
+    border: 1.5px dashed #bbb;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #555;
+    cursor: pointer;
+  }
+  .photo-remove { background: none; border: none; color: #999; font-size: 0.8rem; cursor: pointer; text-decoration: underline; }
+
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    padding: 5px 12px;
+    border: 1.5px solid #ddd;
+    border-radius: 999px;
+    background: white;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .chip.active { border-color: #e8500a; background: #fff3ec; color: #b33c00; font-weight: 600; }
+
+  .ai-badge {
+    margin-left: 6px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: #eef2ff;
+    color: #4150a8;
+    font-size: 0.7rem;
+    font-weight: 600;
+    vertical-align: middle;
+  }
 
   .divider { border-top: 1px solid #eee; margin: 0.75rem 0; }
 
