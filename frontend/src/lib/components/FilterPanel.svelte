@@ -108,7 +108,7 @@
       right: 0;
       border-radius: 14px 14px 0 0;
       transition: transform 0.3s ease;
-      z-index: 10;
+      z-index: 12; /* über Legende (10) und MapLibre-Quellenangabe (11) */
       padding-bottom: env(safe-area-inset-bottom);
     }
 
