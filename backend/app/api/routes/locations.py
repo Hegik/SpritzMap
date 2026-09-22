@@ -44,6 +44,7 @@ async def get_locations_geojson(
             PriceEntry.location_id,
             PriceEntry.drink_id,
             func.avg(PriceEntry.color_value).label("avg_color"),
+            func.count(PriceEntry.id).label("entry_count"),
         )
         .where(PriceEntry.is_current == True)
         .where(PriceEntry.unavailable == False)
@@ -61,9 +62,11 @@ async def get_locations_geojson(
             PriceEntry.user_id.label("entry_user_id"),
             PriceEntry.last_confirmed_at,
             PriceEntry.glass_type,
+            PriceEntry.note,
             Drink.name.label("drink_name"),
             Drink.color_hex,
             color_sq.c.avg_color,
+            color_sq.c.entry_count,
             User.username,
             ST_X(Location.geom).label("lng"),
             ST_Y(Location.geom).label("lat"),
@@ -96,7 +99,7 @@ async def get_locations_geojson(
     features = []
     for row in rows:
         (location, price, drink_id_val, reported_at, entry_id, entry_user_id, last_confirmed_at,
-         glass_type, drink_name, color_hex, avg_color, username, lng, lat) = row
+         glass_type, note, drink_name, color_hex, avg_color, entry_count, username, lng, lat) = row
         tier = settings.get_price_tier(price)
 
         if price_tier and tier != price_tier:
@@ -122,6 +125,8 @@ async def get_locations_geojson(
                 "entry_user_id": entry_user_id,
                 "last_confirmed_at": last_confirmed_at.strftime("%d.%m.%Y") if last_confirmed_at else None,
                 "glass_type": glass_type.value if glass_type else None,
+                "note": note,
+                "entry_count": entry_count,
             },
         })
 

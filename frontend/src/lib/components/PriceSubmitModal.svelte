@@ -6,6 +6,7 @@
   import { compressImage, fileExtension, type CompressedImage } from '$lib/utils/imageProcessing';
   import { estimateColorValue, type Region } from '$lib/utils/colorAnalysis';
   import { detectGlass } from '$lib/utils/glassDetection';
+  import { glassIconSvg } from '$lib/utils/glassIcons';
   import type { GlassType } from '$lib/types/photo';
 
   let {
@@ -13,14 +14,60 @@
     locationId = null,
     locationName = '',
     isEmptyLocation = false,
+    locationCoords = null,
     onsubmitted = () => {},
   }: {
     open: boolean;
     locationId: number | null;
     locationName: string;
     isEmptyLocation?: boolean;
+    locationCoords?: [number, number] | null;
     onsubmitted?: () => void;
   } = $props();
+
+  // Leichte Absicherung gegen Einträge „aus der Ferne“: beim Öffnen Standort prüfen und bei > 100 m
+  // einen Hinweis zeigen. Nur ein Hinweis – ohne Standortfreigabe oder GPS geht es normal weiter.
+  const MAX_DISTANCE_M = 100;
+  let distanceCheck = $state<'checking' | 'far' | 'ok'>('ok');
+  let distanceM = $state(0);
+
+  function distanceMeters([lng1, lat1]: [number, number], [lng2, lat2]: [number, number]): number {
+    const rad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * rad;
+    const dLng = (lng2 - lng1) * rad;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
+    return 2 * 6371000 * Math.asin(Math.sqrt(a));
+  }
+
+  function checkDistance() {
+    const target = locationCoords;
+    if (!target || !navigator.geolocation) {
+      distanceCheck = 'ok';
+      return;
+    }
+    distanceCheck = 'checking';
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (!open || distanceCheck !== 'checking') return;
+        const d = distanceMeters([pos.coords.longitude, pos.coords.latitude], target);
+        distanceM = d;
+        // Ungenauigkeit der Ortung zugunsten des Nutzers abziehen
+        distanceCheck = d - (pos.coords.accuracy || 0) > MAX_DISTANCE_M ? 'far' : 'ok';
+      },
+      () => {
+        if (distanceCheck === 'checking') distanceCheck = 'ok';
+      },
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 },
+    );
+  }
+
+  $effect(() => {
+    if (open) checkDistance();
+  });
+
+  function formatDistance(m: number): string {
+    return m >= 1000 ? `${(m / 1000).toFixed(1).replace('.', ',')} km` : `${Math.round(m / 10) * 10} m`;
+  }
 
   let drinkId = $state(0);
   let price = $state('');
@@ -42,7 +89,45 @@
   let aiRegion: Region | undefined;
   let colorTouched = $state(false);
 
+  // Fortschrittsbalken: echte Stufen, innerhalb einer Stufe läuft der Balken asymptotisch auf deren Ende zu
+  // (der Modell-Download von coco-ssd meldet selbst keinen Fortschritt)
+  type AnalysisStage = 'compress' | 'model' | 'detect' | 'color';
+  const STAGE_RANGE: Record<AnalysisStage, [number, number]> = {
+    compress: [0, 20],
+    model: [20, 75],
+    detect: [75, 95],
+    color: [95, 100],
+  };
+  let analysisStage = $state<AnalysisStage>('compress');
+  let progress = $state(0);
+  let progressTimer: ReturnType<typeof setInterval> | undefined;
+
+  function setStage(stage: AnalysisStage) {
+    analysisStage = stage;
+    progress = Math.max(progress, STAGE_RANGE[stage][0]);
+  }
+
+  function startProgress() {
+    clearInterval(progressTimer);
+    progress = 0;
+    setStage('compress');
+    progressTimer = setInterval(() => {
+      const end = STAGE_RANGE[analysisStage][1];
+      progress += (end - progress) * 0.05;
+    }, 100);
+  }
+
+  function stopProgress() {
+    clearInterval(progressTimer);
+    progressTimer = undefined;
+  }
+
+  // Neues Foto oder Schließen macht eine laufende Analyse ungültig
+  let analysisRun = 0;
+
   function resetPhoto() {
+    analysisRun++;
+    stopProgress();
     if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
     photo?.bitmap.close();
     photo = null;
@@ -72,19 +157,30 @@
     input.value = '';
     if (!file) return;
     resetPhoto();
+    const run = analysisRun;
     analyzing = true;
+    startProgress();
+    let compressed: CompressedImage;
     try {
-      photo = await compressImage(file);
-      photoPreviewUrl = URL.createObjectURL(photo.thumb);
+      compressed = await compressImage(file);
     } catch {
+      if (run !== analysisRun) return;
+      stopProgress();
       analyzing = false;
       photoWarning = $t.submit.photo_error_read;
       return;
     }
+    if (run !== analysisRun) {
+      compressed.bitmap.close();
+      return;
+    }
+    photo = compressed;
+    photoPreviewUrl = URL.createObjectURL(compressed.thumb);
 
     // Stufe 2 (Glasform) liefert den Messbereich für Stufe 1 (Farbwert); schlägt sie fehl, Bildmitte nutzen
     try {
-      const glass = await detectGlass(photo.bitmap);
+      const glass = await detectGlass(compressed.bitmap, (stage) => run === analysisRun && setStage(stage));
+      if (run !== analysisRun) return;
       if (glass) {
         aiGlassType = glass.glassType;
         glassType = glass.glassType;
@@ -92,9 +188,12 @@
       }
     } catch (err) {
       console.warn('[SpritzMap] Glaserkennung fehlgeschlagen', err);
+      if (run !== analysisRun) return;
     }
-    analyzing = false;
+    setStage('color');
     applyColorSuggestion();
+    stopProgress();
+    analyzing = false;
   }
 
   function applyColorSuggestion() {
@@ -211,7 +310,21 @@
       <h2>{$t.submit.heading}</h2>
       <p class="location-name">{locationName}</p>
 
-      {#if success}
+      {#if distanceCheck === 'checking'}
+        <p class="hint center">{$t.submit.distance_checking}</p>
+        <button type="button" class="btn-unavailable" onclick={() => (distanceCheck = 'ok')}>
+          {$t.submit.distance_skip}
+        </button>
+      {:else if distanceCheck === 'far'}
+        <div class="distance-warning">
+          <p class="distance-title">{$t.submit.distance_title(formatDistance(distanceM))}</p>
+          <p>{$t.submit.distance_text}</p>
+        </div>
+        <button type="button" class="btn-primary" onclick={() => (open = false)}>{$t.submit.distance_cancel}</button>
+        <button type="button" class="btn-unavailable" onclick={() => (distanceCheck = 'ok')}>
+          {$t.submit.distance_continue}
+        </button>
+      {:else if success}
         <p class="success">{$t.submit.success}</p>
         {#if photoWarning}<p class="warning">{photoWarning}</p>{/if}
       {:else}
@@ -253,7 +366,17 @@
               {/if}
             </div>
             {#if analyzing}
-              <p class="hint">{$t.submit.analyzing}</p>
+              <div
+                class="progress"
+                role="progressbar"
+                aria-label={$t.submit.analyzing}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progress)}
+              >
+                <div class="progress-fill" style="width: {progress}%"></div>
+              </div>
+              <p class="hint">{$t.submit.analyze_stage[analysisStage]}</p>
             {:else if photo && aiColorValue === null && aiGlassType === null}
               <p class="hint">{$t.submit.ai_nothing_found}</p>
             {/if}
@@ -285,10 +408,11 @@
               {#each GLASS_TYPES as g}
                 <button
                   type="button"
-                  class="chip"
+                  class="chip glass-chip"
                   class:active={glassType === g}
+                  aria-pressed={glassType === g}
                   onclick={() => (glassType = glassType === g ? null : g)}
-                >{$t.glass[g]}</button>
+                >{@html glassIconSvg(g, 26)}<span>{$t.glass[g]}</span></button>
               {/each}
             </div>
           </div>
@@ -376,7 +500,7 @@
 
   .color-slider-wrapper input { flex: 1; padding: 0; border: none; }
 
-  button[type='submit'] {
+  button[type='submit'], .btn-primary {
     padding: 10px;
     background: #e8500a;
     color: white;
@@ -387,7 +511,22 @@
     cursor: pointer;
   }
 
+  .btn-primary { width: 100%; margin-bottom: 6px; }
   button[type='submit']:disabled { opacity: 0.6; }
+  .center { text-align: center; padding: 1rem 0; }
+
+  .distance-warning {
+    margin-bottom: 1rem;
+    padding: 12px 14px;
+    border-radius: 8px;
+    background: #fff8e6;
+    border: 1px solid #f3d27a;
+    color: #5c4300;
+    font-size: 0.875rem;
+    line-height: 1.4;
+  }
+  .distance-warning p { margin: 0; }
+  .distance-title { font-weight: 600; margin-bottom: 4px !important; }
   .error { color: #c00; font-size: 0.875rem; margin: 0; }
   .success { color: green; font-weight: 600; text-align: center; padding: 1rem; }
 
@@ -419,7 +558,37 @@
     font-size: 0.85rem;
     cursor: pointer;
   }
+  .glass-chip {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 6px 6px;
+    border-radius: 10px;
+    color: #555;
+    font-size: 0.78rem;
+  }
   .chip.active { border-color: #e8500a; background: #fff3ec; color: #b33c00; font-weight: 600; }
+
+  .progress {
+    height: 6px;
+    border-radius: 999px;
+    background: #f1e6df;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #e8500a, #ff9a3c, #e8500a);
+    background-size: 200% 100%;
+    animation: progress-shimmer 1.2s linear infinite;
+    transition: width 0.15s linear;
+  }
+  @keyframes progress-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: 0 0; }
+  }
 
   .ai-badge {
     margin-left: 6px;

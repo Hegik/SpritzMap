@@ -31,9 +31,25 @@ function loadDetector(): Promise<Detector> {
   return detectorPromise;
 }
 
-/** Findet das wahrscheinlichste Glas im Bild. null, wenn kein Glas erkannt wurde. */
-export async function detectGlass(bitmap: ImageBitmap): Promise<GlassDetection | null> {
+let detectorReady = false;
+
+/** true, sobald das Modell geladen ist (dann entfällt der Download beim nächsten Foto). */
+export function isDetectorReady(): boolean {
+  return detectorReady;
+}
+
+/**
+ * Findet das wahrscheinlichste Glas im Bild. null, wenn kein Glas erkannt wurde.
+ * onStage meldet den Wechsel vom Modell-Laden zur eigentlichen Erkennung (für die Fortschrittsanzeige).
+ */
+export async function detectGlass(
+  bitmap: ImageBitmap,
+  onStage?: (stage: 'model' | 'detect') => void,
+): Promise<GlassDetection | null> {
+  if (!detectorReady) onStage?.('model');
   const detector = await loadDetector();
+  detectorReady = true;
+  onStage?.('detect');
   // coco-ssd erwartet ein Pixel-Element; ImageBitmap über Canvas übergeben
   const canvas = document.createElement('canvas');
   canvas.width = bitmap.width;

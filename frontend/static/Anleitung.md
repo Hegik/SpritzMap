@@ -1,16 +1,28 @@
 # ![SpritzMap Logo](logo_big.svg)
 
-SpritzMap zeigt dir, wo du in Berlin Aperol Spritz, Limoncello Spritz und Co. zu welchem Preis und in welchem Mischverhältnis bekommst.
+SpritzMap zeigt dir, wo du in deiner Stadt Aperol Spritz, Limoncello Spritz und Co. zu welchem Preis und in welchem Mischverhältnis bekommst.
 
 ## Die Karte 
 
-Durch Scrollen, oder Touch-Gestene kann durch die Karte navigiert werden. Bei näherer Zoomstufe werden die einzelnen Lokale als Spritzläser angezeigt.
+Durch Scrollen oder Touch-Gesten kann durch die Karte navigiert werden. Bei näherer Zoomstufe werden die einzelnen Lokale als Spritzgläser angezeigt.
 
 Die Spritz Symbole auf der Karte zeigen Bars und Biergärten mit erfassten Spritz-Preisen.
 Die Farbe des Symbols entspricht der ausgewählten Spritz-Sorte.
 Je kräftiger die Farbe, desto mehr Aperol (bzw. Likör) ist im Glas.
 
 Orte für die noch keine Daten eingetragen wurden, werden mit einem "?" gekennzeichnet.
+
+## Das Popup eines Lokals
+
+Tippst du auf ein Lokal, siehst du:
+
+- **Art des Lokals** (Bar, Biergarten, Café …)
+- **Preis und Preisstufe** (€, €€ oder €€€) der gewählten Sorte
+- **Mischverhältnis** – gemittelt aus allen aktuellen Meldungen, deren Anzahl darunter steht
+- **Glasform**, in der der Spritz serviert wird
+- die **Notiz** zur letzten Meldung, **weitere Sorten** mit ihren Preisen und **Fotos** (zum Vergrößern antippen)
+
+Ist ein Preis noch aktuell, kannst du ihn mit **„Preis stimmt noch ✓"** bestätigen.
 
 ## Auswahl des Spritz-Getränks
 
@@ -28,9 +40,14 @@ Nach der Registrierung erhältst du eine Bestätigungs-E-Mail.
 
 1. Tippe auf einen Ort auf der Karte.
 2. Im Popup erscheint ein Button **„Spritz hinzufügen"** (nur für eingeloggte Nutzer).
-3. Wähle die Sorte, trag den Preis ein und stelle das Mischverhältnis ein.
-4. Speichern – fertig!
-Wenn
+3. Wähle die Sorte und trag den Preis ein.
+4. Optional: **Foto aufnehmen**. Die SpritzMap schlägt dir daraus Glasform und Mischverhältnis vor – ein Balken zeigt, wie weit die Analyse ist. Die Vorschläge sind mit **„KI-Vorschlag"** markiert und lassen sich jederzeit ändern.
+5. Stelle das Mischverhältnis ein und wähle die **Glasform** (Weinglas, Wasserglas oder Sonstiges).
+6. Speichern – fertig!
+
+Das Mischverhältnis lässt sich am besten beurteilen, solange der Spritz noch vor dir steht. Deshalb prüft die SpritzMap beim Eintragen kurz deinen Standort: Bist du mehr als 100 m vom Lokal entfernt, bekommst du einen Hinweis – eintragen kannst du trotzdem.
+
+Gibt es eine Sorte in einem Lokal nicht (mehr), kannst du das im selben Fenster melden.
 
 ## Mein Standort
 
@@ -43,6 +60,16 @@ Mit dem Standort-Button (◎) unten links auf der Karte springst du zu deiner ak
 **Wieso ist mein lieblings Lokal nicht auf der Karte?**
 
 > Die Lokale werden einmal am Tag von OpenStreetMap abgerufen. Nur wenn ein Lokal dort hinterlegt ist, kann es in der Spritzmap vorkommen. 
+
+**Welche KI wird für die Fotoanalyse benutzt?**
+
+> Die Glasform erkennt **COCO-SSD**, ein frei verfügbares, vortrainiertes Modell zur Objekterkennung (MobileNet-Variante, trainiert auf dem öffentlichen COCO-Bilddatensatz). Es findet im Foto ein „Weinglas" oder einen „Becher" und markiert, wo das Glas im Bild steht.
+> Das Mischverhältnis ist keine KI im engeren Sinn: Aus dem Bereich des Glases, in dem das Getränk steht, werden die Farbwerte der Pixel gemessen und mit der Farbe der gewählten Sorte verglichen.
+> Beides läuft **komplett in deinem Browser** (mit TensorFlow.js). Das Modell (ca. 5 MB) liegt auf unserem eigenen Server und wird beim ersten Foto einmalig geladen. Dein Foto wird für die Analyse **nicht** an einen KI-Dienst geschickt – hochgeladen wird es erst beim Speichern, und nur, damit es im Popup erscheint.
+
+**Warum fragt die SpritzMap beim Eintragen nach meinem Standort?**
+
+> Damit die Karte verlässlich bleibt: Das Mischverhältnis lässt sich im Nachhinein kaum noch einschätzen. Die Entfernung zum Lokal wird nur in deinem Browser berechnet und nicht gespeichert. Gibst du deinen Standort nicht frei, kannst du ganz normal weiter eintragen.
 
 **Wie berechnet sich die Einfärbung der Gebiete?**
 

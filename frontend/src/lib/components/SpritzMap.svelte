@@ -9,7 +9,8 @@
   import MapLegend from '$lib/components/MapLegend.svelte';
   import { isLoggedIn, user } from '$lib/stores/auth';
   import { api, mediaUrl } from '$lib/api/client';
-  import type { Photo } from '$lib/types/photo';
+  import type { GlassType, Photo } from '$lib/types/photo';
+  import { glassIconSvg } from '$lib/utils/glassIcons';
   import { t } from '$lib/i18n';
   import type { Map, Popup, GeoJSONSource } from 'maplibre-gl';
   import type { CityMeta } from '$lib/stores/map';
@@ -30,6 +31,7 @@
   let submitLocationId = $state<number | null>(null);
   let submitLocationName = $state('');
   let submitIsEmpty = $state(false);
+  let submitCoords = $state<[number, number] | null>(null);
   let helpOpen = $state(false);
   let lightboxOpen = $state(false);
   let lightboxPhotos = $state<Photo[]>([]);
@@ -294,6 +296,22 @@
     return String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
   }
 
+  // Glasform, Anzahl der Meldungen und Notiz zum aktuellen Preis
+  function buildDetailsHtml(props: Record<string, any>): string {
+    const rows: string[] = [];
+    const glass = props.glass_type as GlassType | null;
+    if (glass && glass in $t.glass) {
+      rows.push(`<div class="popup-fact">${glassIconSvg(glass, 18)}<span>${escapeHtml($t.glass[glass])}</span></div>`);
+    }
+    const count = Number(props.entry_count);
+    if (count > 0) {
+      rows.push(`<div class="popup-fact"><span class="popup-fact-num">${count}</span><span>${escapeHtml($t.map.popup_entry_count(count))}</span></div>`);
+    }
+    let html = rows.length ? `<div class="popup-facts">${rows.join('')}</div>` : '';
+    if (props.note) html += `<div class="popup-note">„${escapeHtml(props.note)}“</div>`;
+    return html;
+  }
+
   function buildPhotoStripHtml(photos: Photo[]): string {
     if (!photos.length) return '';
     const thumbs = photos
@@ -431,28 +449,34 @@
       pricesRes?.ok ? await pricesRes.json() : [];
     const photos: Photo[] = photosRes?.ok ? await photosRes.json() : [];
 
-    let html = `<strong>${props.name}</strong><br>`;
-    if (address) html += `<small>${address}</small><br>`;
+    const typeLabel = $t.map.location_type[props.location_type as keyof typeof $t.map.location_type];
+    let html = `<strong>${escapeHtml(props.name)}</strong>`;
+    if (typeLabel) html += ` <span class="popup-type">${escapeHtml(typeLabel)}</span>`;
+    html += '<br>';
+    if (address) html += `<small>${escapeHtml(address)}</small><br>`;
 
     if (props.popup_type === 'priced') {
       const popupIconHtml = buildIconHtml(props.drink_color_hex, props.avg_color_value, 200);
       html += `<div style="display:flex;justify-content:center;margin:6px 0;">${popupIconHtml}</div>`;
       html += buildIntensityBarHtml(props.avg_color_value, props.drink_color_hex);
-      html += `${props.drink_name} — <b>${Number(props.price).toFixed(2)} €</b>`;
+      html += `<div class="popup-price">${escapeHtml(props.drink_name)} — <b>${Number(props.price).toFixed(2)} €</b>`;
+      if (props.price_tier) html += ` <span class="popup-tier">${escapeHtml(props.price_tier)}</span>`;
+      html += `</div>`;
+      html += buildDetailsHtml(props);
       html += buildOtherDrinksHtml(allPrices, props.drink_id);
       html += buildPhotoStripHtml(photos);
       html += `<div class="popup-meta">${$t.map.popup_reported_by(props.reported_by, props.reported_at)}</div>`;
       html += buildConfirmHtml(props);
-      if ($isLoggedIn) html += `<button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="false">${$t.map.btn_add_spritz}</button>`;
+      if ($isLoggedIn) html += `<button class="popup-btn" data-id="${props.id}" data-name="${escapeHtml(props.name)}" data-empty="false">${$t.map.btn_add_spritz}</button>`;
     } else if (props.popup_type === 'nodata') {
       html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price_for_drink}</em>`;
       html += buildOtherDrinksHtml(allPrices, null);
       html += buildPhotoStripHtml(photos);
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="${allPrices.length === 0}">${$t.map.btn_add_spritz}</button>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${escapeHtml(props.name)}" data-empty="${allPrices.length === 0}">${$t.map.btn_add_spritz}</button>`;
     } else {
       html += `<em style="color:#aaa;font-size:0.8rem">${$t.map.popup_no_price}</em>`;
       html += buildOtherDrinksHtml(allPrices, null);
-      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${props.name}" data-empty="${allPrices.length === 0}">${$t.map.btn_add_spritz}</button>`;
+      if ($isLoggedIn) html += `<br><button class="popup-btn" data-id="${props.id}" data-name="${escapeHtml(props.name)}" data-empty="${allPrices.length === 0}">${$t.map.btn_add_spritz}</button>`;
     }
 
     popup.setLngLat(coords).setHTML(html).addTo(map);
@@ -475,6 +499,7 @@
         submitLocationId = Number(btn.dataset.id);
         submitLocationName = btn.dataset.name ?? '';
         submitIsEmpty = btn.dataset.empty === 'true';
+        submitCoords = [coords[0], coords[1]];
         submitOpen = true;
         popup.remove();
       });
@@ -735,6 +760,7 @@
   locationId={submitLocationId}
   locationName={submitLocationName}
   isEmptyLocation={submitIsEmpty}
+  locationCoords={submitCoords}
   onsubmitted={() => { const city = $selectedCity; if (city) loadMarkers(city, $selectedDrinkId, $selectedPriceTier); }}
 />
 
@@ -946,6 +972,63 @@
     font-size: 0.72rem;
     color: #bbb;
     text-align: right;
+  }
+
+  :global(.popup-type) {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: #f3f3f3;
+    color: #777;
+    font-size: 0.68rem;
+    font-weight: 500;
+    vertical-align: middle;
+  }
+
+  :global(.popup-price) {
+    font-size: 0.95rem;
+  }
+
+  :global(.popup-tier) {
+    margin-left: 2px;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: #fff3ec;
+    color: #b33c00;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  :global(.popup-facts) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  :global(.popup-fact) {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px 3px 6px;
+    border: 1px solid #eee;
+    border-radius: 999px;
+    color: #555;
+    font-size: 0.75rem;
+  }
+
+  :global(.popup-fact svg) { color: #e8500a; }
+  :global(.popup-fact-num) { font-weight: 700; color: #e8500a; }
+
+  :global(.popup-note) {
+    margin-top: 8px;
+    padding-left: 8px;
+    border-left: 3px solid #f1e6df;
+    color: #666;
+    font-size: 0.8rem;
+    font-style: italic;
+    overflow-wrap: anywhere;
   }
 
   :global(.popup-other-drinks) {

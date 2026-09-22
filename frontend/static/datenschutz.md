@@ -55,7 +55,9 @@ unser Server regelmäßig selbst ab; dabei werden **keine** Daten von dir übert
 Wenn du auf „Mein Standort“ tippst oder die Standortfreigabe bereits erteilt hast, fragt die Seite deinen
 Standort über die Standortfunktion deines Browsers ab. Die Position wird in deinem Browser verwendet, um die Karte
 auszurichten. Um die passende Stadt vorzuwählen, wird sie einmalig an unseren Server gesendet – dort aber
-**nicht gespeichert**. Die Freigabe kannst du jederzeit in deinem Browser widerrufen.
+**nicht gespeichert**. Wenn du einen Spritz einträgst, wird dein Standort erneut abgefragt und **nur in deinem
+Browser** mit der Position des Lokals verglichen, um bei größerer Entfernung einen Hinweis anzuzeigen; dabei wird
+nichts an unseren Server übertragen. Die Freigabe kannst du jederzeit in deinem Browser widerrufen.
 
 - **Rechtsgrundlage:** Art. 6 Abs. 1 lit. a DSGVO (deine Einwilligung über die Standortabfrage des Browsers)
 
