@@ -35,9 +35,6 @@
 <AuthModal bind:open={authOpen} onloggedin={() => spritzMap?.reloadMarkers()} />
 
 <style>
-  :global(*, *::before, *::after) { box-sizing: border-box; margin: 0; padding: 0; }
-  :global(body) { font-family: system-ui, sans-serif; }
-
   .app {
     display: flex;
     flex-direction: column;

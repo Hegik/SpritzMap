@@ -607,18 +607,17 @@
         await loadMarkers(initialCity, $selectedDrinkId, $selectedPriceTier);
       }
 
-      // Auto-show position if permission already granted
-      if (navigator.permissions) {
-        navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-          if (result.state === 'granted') {
-            navigator.geolocation.getCurrentPosition(
-              (pos) => selectCityAt(pos.coords.latitude, pos.coords.longitude, true),
-              () => {},
-              { timeout: 10000, maximumAge: 300000 },
-            );
-            watchId = navigator.geolocation.watchPosition(updateUserLocation, () => {});
-          }
-        });
+      // Standort gleich beim Öffnen anfragen, um die Stadt des Nutzers zu öffnen.
+      // Bei abgelehnter Berechtigung bleibt es bei der ersten Stadt der Liste.
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            selectCityAt(pos.coords.latitude, pos.coords.longitude, true);
+            if (watchId === null) watchId = navigator.geolocation.watchPosition(updateUserLocation, () => {});
+          },
+          () => {},
+          { timeout: 10000, maximumAge: 300000 },
+        );
       }
 
       // Subscribe after map is ready — first call fires immediately with current value

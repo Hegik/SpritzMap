@@ -102,7 +102,7 @@
   .legend {
     position: absolute;
     right: 0.65rem;
-    bottom: 2rem; /* über der MapLibre-Attribution */
+    bottom: 2.75rem; /* über der MapLibre-Attribution samt „i“-Button */
     z-index: 10;
     background: rgba(255, 255, 255, 0.95);
     border-radius: 10px;

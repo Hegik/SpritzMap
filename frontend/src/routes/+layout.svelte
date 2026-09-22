@@ -23,3 +23,9 @@
 </svelte:head>
 
 {@render children()}
+
+<style>
+	/* Global im Root-Layout, damit auch ein Neuladen von Unterseiten (z. B. /moderation) Reset und Schrift bekommt */
+	:global(*, *::before, *::after) { box-sizing: border-box; margin: 0; padding: 0; }
+	:global(body) { font-family: system-ui, sans-serif; }
+</style>

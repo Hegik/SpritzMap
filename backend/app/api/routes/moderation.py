@@ -703,6 +703,7 @@ async def stats_moderation_activity(
     granularity: str = "month",
     year: int | None = None,
     month: int | None = None,
+    city_id: int | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_moderator),
 ):
@@ -710,15 +711,25 @@ async def stats_moderation_activity(
         month = 1
     start, end = _time_window(granularity, year, month)
 
+    city_filter = (
+        "AND price_entry_id IN (SELECT pe.id FROM price_entries pe "
+        "JOIN locations loc ON pe.location_id = loc.id WHERE loc.city_id = :city_id)"
+        if city_id else ""
+    )
+    params: dict = {"start": start, "end": end}
+    if city_id:
+        params["city_id"] = city_id
+
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT date_trunc('day', created_at) AS day, action, COUNT(*) AS count
             FROM moderation_logs
             WHERE created_at BETWEEN :start AND :end
+            {city_filter}
             GROUP BY 1, 2
             ORDER BY 1
         """),
-        {"start": start, "end": end},
+        params,
     )
 
     day_map: dict[str, dict[str, int]] = {}

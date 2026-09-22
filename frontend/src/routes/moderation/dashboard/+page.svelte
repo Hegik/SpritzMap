@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { api } from '$lib/api/client';
   import { user, canModerate } from '$lib/stores/auth';
 
@@ -73,6 +73,8 @@
   let loadingDT = $state(false); let errDT = $state('');
   let loadingMA = $state(false); let errMA = $state('');
   let loadingC  = $state(false);
+  // Gesamtzeitraum-Diagramme: Fehler statt ewigem Ladebalken anzeigen
+  let errTL = $state(''); let errFR = $state(''); let errHM = $state(''); let errLT = $state(''); let errH = $state('');
 
   // ── ApexCharts ────────────────────────────────────────────────────────────
   let Apex: any;
@@ -506,18 +508,20 @@
     const p = new URLSearchParams();
     if (selHistDrink) p.set('drink_id', selHistDrink);
     if (selCityId !== '') p.set('city_id', String(selCityId));
-    histogramData = null;
+    histogramData = null; errH = '';
     try { histogramData = await api.get<HistogramStats>(`/moderation/graph-price-histogram?${p}`); }
-    catch { /* silent */ }
+    catch (e: any) { errH = e.message; }
   }
 
   async function loadStaticCharts() {
     const q = cityParam();
+    topLocations = null; freshnessData = null; heatmapRaw = null; locTypesData = null;
+    errTL = ''; errFR = ''; errHM = ''; errLT = '';
     await Promise.all([
-      api.get<TopLocation[]>(`/moderation/graph-top-locations${q}`).then(d => { topLocations = d; }).catch(() => {}),
-      api.get<FreshnessItem[]>(`/moderation/graph-freshness${q}`).then(d => { freshnessData = d; }).catch(() => {}),
-      api.get<HeatmapRow[]>(`/moderation/graph-heatmap${q}`).then(d => { heatmapRaw = d; }).catch(() => {}),
-      api.get<LocationTypeItem[]>(`/moderation/graph-location-types${q}`).then(d => { locTypesData = d; }).catch(() => {}),
+      api.get<TopLocation[]>(`/moderation/graph-top-locations${q}`).then(d => { topLocations = d; }).catch(e => { errTL = e.message; }),
+      api.get<FreshnessItem[]>(`/moderation/graph-freshness${q}`).then(d => { freshnessData = d; }).catch(e => { errFR = e.message; }),
+      api.get<HeatmapRow[]>(`/moderation/graph-heatmap${q}`).then(d => { heatmapRaw = d; }).catch(e => { errHM = e.message; }),
+      api.get<LocationTypeItem[]>(`/moderation/graph-location-types${q}`).then(d => { locTypesData = d; }).catch(e => { errLT = e.message; }),
       loadHistogram(),
     ]);
   }
@@ -539,6 +543,13 @@
   }
   let areasCityId = $state<number | ''>('');
 
+  // Zeitraum und Stadt wirken sofort – kein extra „Laden“-Klick nötig
+  let filtersReady = false;
+  $effect(() => {
+    granularity; selYear; selMonth; selCityId;
+    if (filtersReady) untrack(loadEverything);
+  });
+
   onMount(async () => {
     const m = await import('apexcharts');
     Apex = m.default;
@@ -551,6 +562,7 @@
     if (own && own.length) selCityId = own[0];
 
     await loadEverything();
+    filtersReady = true;
   });
 
   // ── Widget actions ────────────────────────────────────────────────────────
@@ -606,7 +618,6 @@
       <option value="">Alle Städte</option>
       {#each cities as city}<option value={city.id}>{city.name}</option>{/each}
     </select>
-    <button class="btn-primary" onclick={loadEverything}>Laden</button>
   </div>
 
   <!-- ── Section: Nutzer & Aktivität ─────────────────────────────────────── -->
@@ -615,7 +626,7 @@
 
     <div class="chart-box">
       <div class="chart-header">
-        <span class="chart-title">Nutzerentwicklung</span>
+        <span class="chart-title">Nutzerentwicklung{#if selCityId !== ''} <span class="chart-note">(alle Städte)</span>{/if}</span>
         <div class="toggle-grp">
           <button class="tog" class:tog-active={chart1Mode === 'activity'}   onclick={() => chart1Mode = 'activity'}>Aktivität</button>
           <button class="tog" class:tog-active={chart1Mode === 'cumulative'} onclick={() => chart1Mode = 'cumulative'}>Kumuliert</button>
@@ -623,7 +634,7 @@
       </div>
       {#if errU}<p class="cerr">{errU}</p>
       {:else if loadingU}<div class="chart-skeleton"></div>
-      {:else if !usersData}<p class="cempty">Keine Daten</p>
+      {:else if !usersData || !buildUserDays(usersData).length}<p class="cempty">Keine Daten</p>
       {:else}<div bind:this={el1}></div>{/if}
     </div>
 
@@ -705,7 +716,8 @@
           {#each drinks as d}<option value={String(d.id)}>{d.name}</option>{/each}
         </select>
       </div>
-      {#if !histogramData}<div class="chart-skeleton"></div>
+      {#if errH}<p class="cerr">{errH}</p>
+      {:else if !histogramData}<div class="chart-skeleton"></div>
       {:else if !histogramData.buckets.length}<p class="cempty">Keine Daten</p>
       {:else}<div bind:this={el5}></div>{/if}
     </div>
@@ -720,7 +732,8 @@
       <div class="chart-header">
         <span class="chart-title">Top-Standorte nach Eintragsanzahl</span>
       </div>
-      {#if !topLocations}<div class="chart-skeleton" style="height:280px"></div>
+      {#if errTL}<p class="cerr">{errTL}</p>
+      {:else if !topLocations}<div class="chart-skeleton" style="height:280px"></div>
       {:else if !topLocations.length}<p class="cempty">Keine Daten</p>
       {:else}<div bind:this={el7}></div>{/if}
     </div>
@@ -729,7 +742,8 @@
       <div class="chart-header">
         <span class="chart-title">Datenlage — Eintragsalter</span>
       </div>
-      {#if !freshnessData}<div class="chart-skeleton"></div>
+      {#if errFR}<p class="cerr">{errFR}</p>
+      {:else if !freshnessData}<div class="chart-skeleton"></div>
       {:else if !freshnessData.some(f => f.count > 0)}<p class="cempty">Keine Daten</p>
       {:else}<div bind:this={el8}></div>{/if}
     </div>
@@ -738,7 +752,8 @@
       <div class="chart-header">
         <span class="chart-title">Einträge nach Standorttyp</span>
       </div>
-      {#if !locTypesData}<div class="chart-skeleton"></div>
+      {#if errLT}<p class="cerr">{errLT}</p>
+      {:else if !locTypesData}<div class="chart-skeleton"></div>
       {:else if !locTypesData.length}<p class="cempty">Keine Daten</p>
       {:else}<div bind:this={el10}></div>{/if}
     </div>
@@ -753,8 +768,9 @@
       <div class="chart-header">
         <span class="chart-title">Einreichungen nach Wochentag & Uhrzeit</span>
       </div>
-      {#if !heatmapRaw}<div class="chart-skeleton" style="height:220px"></div>
-      {:else if !heatmapRaw.length}<p class="cempty">Keine Daten</p>
+      {#if errHM}<p class="cerr">{errHM}</p>
+      {:else if !heatmapRaw}<div class="chart-skeleton" style="height:220px"></div>
+      {:else if !heatmapRaw.some(r => r.count > 0)}<p class="cempty">Keine Daten</p>
       {:else}<div bind:this={el9}></div>{/if}
     </div>
 
@@ -860,18 +876,6 @@
   }
   .f-sel-sm { max-width: 160px; }
 
-  .btn-primary {
-    padding: 0.35rem 0.9rem;
-    background: #e8500a;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .btn-primary:hover { background: #c93e00; }
-
   /* Grid */
   .chart-grid {
     display: grid;
@@ -908,6 +912,8 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
+
+  .chart-note { font-weight: 400; text-transform: none; letter-spacing: 0; color: #aaa; }
 
   .hdr-controls {
     display: flex;
