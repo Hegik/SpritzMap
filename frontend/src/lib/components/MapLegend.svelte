@@ -150,6 +150,6 @@
   .hint { margin: 4px 0 0; font-size: 0.68rem; color: #999; font-style: italic; }
 
   @media (max-width: 640px) {
-    .legend { bottom: calc(4.5rem + 6px); }
+    .legend { bottom: calc(var(--filter-bar-h, 0px) + 2.5rem); }
   }
 </style>

@@ -576,6 +576,12 @@
     map.on('zoom', () => { mapZoom = map.getZoom(); });
 
     map.on('load', async () => {
+      // Mobil startet die Quellenangabe eingeklappt („i“) – aufgeklappt ist sie zweizeilig und
+      // läge über den Kartenbuttons und der Legende. Ein Tipp auf „i“ zeigt Impressum & Co.
+      if (window.matchMedia('(max-width: 640px)').matches) {
+        mapEl.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show');
+      }
+
       for (const layer of ['markers-priced', 'markers-nodata']) {
         map.on('click', layer, showPopup);
         map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
@@ -910,11 +916,18 @@
     .locate-btn,
     .help-btn,
     .splash-btn {
-      bottom: 4.5rem;
+      bottom: calc(var(--filter-bar-h, 0px) + 1.5rem);
     }
 
     .zoom-btns {
-      bottom: calc(4.5rem + 34px + 8px);
+      bottom: calc(var(--filter-bar-h, 0px) + 1.5rem + 34px + 8px);
+    }
+
+    /* MapLibre-Hinweise (Quellen, Impressum, Datenschutz) über der Filterleiste; aufgeklappt vor der Legende */
+    .map-container :global(.maplibregl-ctrl-bottom-left),
+    .map-container :global(.maplibregl-ctrl-bottom-right) {
+      bottom: var(--filter-bar-h, 0px);
+      z-index: 11;
     }
   }
 

@@ -15,6 +15,15 @@
     return () => { document.body.style.overflow = ''; };
   });
 
+  // Höhe der eingeklappten Leiste (nur mobil sichtbar) als CSS-Variable veröffentlichen, damit
+  // Karten-Hinweise (Impressum, OSM), Legende und Buttons darüber liegen statt verdeckt zu werden
+  let barHeight = $state(0);
+  $effect(() => {
+    const root = document.documentElement.style;
+    root.setProperty('--filter-bar-h', barHeight ? `calc(${barHeight}px + env(safe-area-inset-bottom, 0px))` : '0px');
+    return () => root.removeProperty('--filter-bar-h');
+  });
+
   function selectDrink(id: number) {
     selectedDrinkId.set(id);
   }
@@ -25,7 +34,7 @@
 </script>
 
 <aside class="filter-panel" class:collapsed>
-  <button class="toggle" onclick={() => (collapsed = !collapsed)} aria-label={$t.filter.toggle_aria}>
+  <button class="toggle" bind:offsetHeight={barHeight} onclick={() => (collapsed = !collapsed)} aria-label={$t.filter.toggle_aria}>
     <span class="toggle-icon">{collapsed ? '▲' : '▼'}</span>
     <span class="toggle-label">{$t.filter.label}</span>
   </button>
