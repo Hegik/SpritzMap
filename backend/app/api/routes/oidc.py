@@ -1,4 +1,4 @@
-"""Login über Authentik (OIDC). Siehe services/oidc.py und authentik/README.md."""
+"""Login über Authentik (OIDC). Siehe services/oidc.py."""
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone

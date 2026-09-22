@@ -23,7 +23,6 @@ frontend/   SvelteKit 5 (Runes) + MapLibre GL + TypeScript
 backend/    FastAPI (Python 3.12) + SQLAlchemy async + Alembic
             PostgreSQL 17 / PostGIS 3.4
 geoserver/  Doku zum WMS-Layer spritzmap:area_summary (Skript + SQL in backend/geoserver/)
-authentik/  Blueprint, Mailvorlagen-Setup und Runbook für den OIDC-Login
 ```
 
 | Bereich | Wichtige Dateien |
@@ -79,7 +78,6 @@ Jeder Dienst läuft als eigene Coolify-Anwendung an einer gemeinsamen PostgreSQL
 die Migrationen aus (`backend/start.sh`). Hochgeladene Fotos liegen im persistenten Volume unter `MEDIA_ROOT`.
 
 - GeoServer-Layer einrichten: [`geoserver/README.md`](geoserver/README.md)
-- Authentik-Login einrichten und umstellen: [`authentik/README.md`](authentik/README.md)
 
 ## Daten & Lizenzen
 

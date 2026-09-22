@@ -99,7 +99,7 @@ Change `PRICE_TIER_1_MAX` / `PRICE_TIER_2_MAX` in `.env` to adjust without code 
 
 - `AUTH_MODE` (backend env): `legacy` (own accounts, default) → `both` (transition: OIDC + old login, no new local sign-ups) → `authentik` (OIDC only)
 - The backend is the OIDC client (`app/services/oidc.py`, routes in `app/api/routes/oidc.py`): code flow + PKCE, validates the ID token, then issues the usual SpritzMap JWT via a one-time code (`/auth/oidc/exchange`). Roles and city assignments stay in SpritzMap; users are linked **only** via `users.authentik_sub` (Authentik user UUID), never by e-mail
-- Authentik config lives in `authentik/` (blueprint, apply script, step-0 script, runbook in `authentik/README.md`). Accounts from SpritzMap sign-up land in group `spritzmap-users` and may use **only** the `spritzmap` application; every other Authentik application must be bound to `hegik-services`
+- The Authentik configuration (brand, flows, provider) is kept outside this repository. Accounts from SpritzMap sign-up land in group `spritzmap-users` and may use **only** the `spritzmap` application. Brand images and mail templates are served from `frontend/static/auth-brand/`
 - Account deletion: SpritzMap anonymizes its data, then sends the user to Authentik's unenrollment flow (the backend holds no Authentik admin token)
 
 ## Photos & AI analysis
