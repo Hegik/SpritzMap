@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.models.price_entry import PriceEntry
 from app.models.moderation_log import ModerationLog
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.price_entry import PriceEntryCreate, PriceEntryUpdate, PriceEntryOut, PriceEntryUnavailable, GlassTypeUpdate
 from app.api.deps import get_current_user, can_moderate
 from app.models.location import Location

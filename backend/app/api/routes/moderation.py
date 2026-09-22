@@ -9,7 +9,6 @@ from app.models.price_entry import PriceEntry
 from app.models.moderation_log import ModerationLog
 from app.models.location import Location
 from app.models.drink import Drink
-from app.models.user_deletion_log import UserDeletionLog
 from app.models.user import User
 from app.models.photo import Photo
 from app.api.routes.photos import photo_to_dict

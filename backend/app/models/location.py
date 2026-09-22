@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Float, Boolean, BigInteger, Integer, Enum as SAEnum, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy import String, Boolean, BigInteger, Integer, Enum as SAEnum, ForeignKey, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from geoalchemy2 import Geometry
 import enum

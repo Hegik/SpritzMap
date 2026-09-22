@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from geoalchemy2.functions import ST_AsGeoJSON, ST_X, ST_Y
-import json
+from geoalchemy2.functions import ST_X, ST_Y
 from app.core.database import get_db
 from app.models.location import Location
 from app.models.price_entry import PriceEntry

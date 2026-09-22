@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFi
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, text, delete, insert, update as sa_update
-from app.core.database import get_db, AsyncSessionLocal
+from app.core.database import get_db
 from app.models.user import User, UserRole
 from app.models.city import City
 from app.models.osm_sync_run import OsmSyncRun

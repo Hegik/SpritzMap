@@ -14,7 +14,7 @@ from app.core.database import get_db
 from app.models.location import Location
 from app.models.photo import Photo
 from app.models.price_entry import PriceEntry
-from app.models.user import User, UserRole
+from app.models.user import User
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["photos"])

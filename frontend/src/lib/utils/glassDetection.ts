@@ -31,12 +31,8 @@ function loadDetector(): Promise<Detector> {
   return detectorPromise;
 }
 
-let detectorReady = false;
-
 /** true, sobald das Modell geladen ist (dann entfällt der Download beim nächsten Foto). */
-export function isDetectorReady(): boolean {
-  return detectorReady;
-}
+let detectorReady = false;
 
 /**
  * Findet das wahrscheinlichste Glas im Bild. null, wenn kein Glas erkannt wurde.

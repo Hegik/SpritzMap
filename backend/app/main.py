@@ -1,16 +1,15 @@
 from contextlib import asynccontextmanager
 import mimetypes
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.config import settings
-from app.core.database import engine, AsyncSessionLocal
+from app.core.database import engine
 from app.core.database import Base
 from app.api.routes import auth, locations, prices, drinks, moderation, admin, cities, photos, config, oidc
 from app.services.city_jobs import run_city_jobs, fail_interrupted_runs
