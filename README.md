@@ -21,7 +21,7 @@ Lokal sowie eine Gebietsauswertung pro Stadtteil.
 ```
 frontend/   SvelteKit 5 (Runes) + MapLibre GL + TypeScript
 backend/    FastAPI (Python 3.12) + SQLAlchemy async + Alembic
-            PostgreSQL 16 / PostGIS 3.4
+            PostgreSQL 17 / PostGIS 3.4
 geoserver/  Doku zum WMS-Layer spritzmap:area_summary (Skript + SQL in backend/geoserver/)
 authentik/  Blueprint, Mailvorlagen-Setup und Runbook für den OIDC-Login
 ```

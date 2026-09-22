@@ -90,7 +90,7 @@ Change `PRICE_TIER_1_MAX` / `PRICE_TIER_2_MAX` in `.env` to adjust without code 
 
 ## Database
 
-- PostgreSQL 16 + PostGIS 3.4
+- PostgreSQL 17 + PostGIS 3.4 (Produktion: `postgis/postgis:17-3.4`)
 - `DATABASE_URL` must use `postgresql+asyncpg://` scheme
 - `locations.geom` is a PostGIS `POINT` (SRID 4326)
 - Color intensity: `price_entries.color_value` is 0–255; the map uses the **average of the 50 most recent entries** per location+drink
