@@ -289,7 +289,7 @@
     const leftPct = (colorValue / 255) * 100;
     const segmentIndex = Math.min(Math.floor((colorValue / 255) * 7), 6);
     const label = INTENSITY_LABELS[segmentIndex];
-    return `<div class="popup-intensity"><div class="popup-intensity-title">Aperol-Anteil</div><div class="popup-intensity-track" style="background:${colorHex}20;"><div class="popup-intensity-dot" style="left:${leftPct.toFixed(1)}%;background:${colorHex};"></div></div><div class="popup-intensity-label">${label}</div></div>`;
+    return `<div class="popup-intensity"><div class="popup-intensity-title">Mischverhältnis</div><div class="popup-intensity-track" style="background:${colorHex}20;"><div class="popup-intensity-dot" style="left:${leftPct.toFixed(1)}%;background:${colorHex};"></div></div><div class="popup-intensity-label">${label}</div></div>`;
   }
 
   function escapeHtml(value: unknown): string {
