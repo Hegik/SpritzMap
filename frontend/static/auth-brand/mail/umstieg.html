@@ -1,0 +1,14 @@
+{% extends "spritzmap/_layout.html" %}
+{% block preheader %}SpritzMap hat einen neuen Login – lege jetzt dein Passwort fest.{% endblock %}
+{% block heading %}Hallo {{ user.username }}, SpritzMap hat einen neuen Login{% endblock %}
+{% block content %}
+<p style="margin:0 0 12px;">Damit deine Daten noch besser geschützt sind, läuft die Anmeldung bei SpritzMap jetzt über
+  unseren eigenen SpritzMap-Login. Deine Preise, Fotos und dein Benutzername bleiben dabei unverändert.</p>
+<p style="margin:0;">Dein bisheriges Passwort haben wir aus Sicherheitsgründen nicht übernommen.
+  <strong>Lege bitte einmal ein neues Passwort fest</strong> – danach meldest du dich wie gewohnt an.</p>
+{% endblock %}
+{% block button %}Passwort festlegen{% endblock %}
+{% block hint %}
+<p style="margin:0;">Der Link ist 7 Tage gültig. Danach kannst du jederzeit über „Passwort vergessen?“ auf der
+  Anmeldeseite einen neuen anfordern.</p>
+{% endblock %}

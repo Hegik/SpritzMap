@@ -1,0 +1,12 @@
+{% extends "spritzmap/_layout.html" %}
+{% block preheader %}Nur noch ein Klick, dann ist dein SpritzMap-Konto startklar.{% endblock %}
+{% block heading %}Willkommen bei SpritzMap, {{ user.username }}!{% endblock %}
+{% block content %}
+<p style="margin:0;">Schön, dass du dabei bist. Bestätige bitte noch deine E-Mail-Adresse – danach kannst du
+  Spritz-Preise eintragen, bestätigen und Fotos hochladen.</p>
+{% endblock %}
+{% block button %}E-Mail-Adresse bestätigen{% endblock %}
+{% block hint %}
+<p style="margin:0;">Der Link ist 24 Stunden gültig. Wenn du dich nicht bei SpritzMap registriert hast, ignoriere
+  diese Mail einfach – ohne Bestätigung wird das Konto nicht aktiviert.</p>
+{% endblock %}

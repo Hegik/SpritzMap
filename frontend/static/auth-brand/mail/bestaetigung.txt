@@ -1,0 +1,12 @@
+{% autoescape off %}Willkommen bei SpritzMap, {{ user.username }}!
+
+Schön, dass du dabei bist. Bestätige bitte noch deine E-Mail-Adresse – danach kannst du Spritz-Preise eintragen, bestätigen und Fotos hochladen:
+
+{{ url }}
+
+Der Link ist 24 Stunden gültig. Wenn du dich nicht bei SpritzMap registriert hast, ignoriere diese Mail einfach – ohne Bestätigung wird das Konto nicht aktiviert.
+
+--
+SpritzMap · https://spritzmap.hegik.de
+Impressum: https://spritzmap.hegik.de/impressum · Datenschutz: https://spritzmap.hegik.de/datenschutz
+{% endautoescape %}

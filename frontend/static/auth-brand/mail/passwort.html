@@ -1,0 +1,12 @@
+{% extends "spritzmap/_layout.html" %}
+{% block preheader %}Setze dein SpritzMap-Passwort neu.{% endblock %}
+{% block heading %}Hallo {{ user.username }}, neues Passwort gefällig?{% endblock %}
+{% block content %}
+<p style="margin:0;">Jemand – hoffentlich du – möchte das Passwort für dein SpritzMap-Konto neu festlegen.
+  Über den Knopf kannst du ein neues Passwort wählen.</p>
+{% endblock %}
+{% block button %}Neues Passwort festlegen{% endblock %}
+{% block hint %}
+<p style="margin:0;">Der Link ist 2 Stunden gültig. Wenn du das nicht warst, ignoriere diese Mail einfach –
+  dein bisheriges Passwort bleibt dann bestehen.</p>
+{% endblock %}

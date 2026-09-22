@@ -1,0 +1,12 @@
+{% autoescape off %}Hallo {{ user.username }},
+
+jemand – hoffentlich du – möchte das Passwort für dein SpritzMap-Konto neu festlegen. Über diesen Link kannst du ein neues Passwort wählen:
+
+{{ url }}
+
+Der Link ist 2 Stunden gültig. Wenn du das nicht warst, ignoriere diese Mail einfach – dein bisheriges Passwort bleibt dann bestehen.
+
+--
+SpritzMap · https://spritzmap.hegik.de
+Impressum: https://spritzmap.hegik.de/impressum · Datenschutz: https://spritzmap.hegik.de/datenschutz
+{% endautoescape %}

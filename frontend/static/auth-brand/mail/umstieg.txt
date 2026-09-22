@@ -1,0 +1,14 @@
+{% autoescape off %}Hallo {{ user.username }},
+
+SpritzMap hat einen neuen Login. Damit deine Daten noch besser geschützt sind, läuft die Anmeldung jetzt über unseren eigenen SpritzMap-Login. Deine Preise, Fotos und dein Benutzername bleiben dabei unverändert.
+
+Dein bisheriges Passwort haben wir aus Sicherheitsgründen nicht übernommen. Lege bitte einmal ein neues Passwort fest – danach meldest du dich wie gewohnt an:
+
+{{ url }}
+
+Der Link ist 7 Tage gültig. Danach kannst du jederzeit über „Passwort vergessen?“ auf der Anmeldeseite einen neuen anfordern.
+
+--
+SpritzMap · https://spritzmap.hegik.de
+Impressum: https://spritzmap.hegik.de/impressum · Datenschutz: https://spritzmap.hegik.de/datenschutz
+{% endautoescape %}
